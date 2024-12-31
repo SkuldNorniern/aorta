@@ -22,11 +22,11 @@ impl ShellCompleter {
 
     pub fn refresh_commands(&mut self) {
         self.commands.clear();
-        
+
         // Add built-in commands
         self.commands.insert("cd".to_string(), ());
         self.commands.insert("exit".to_string(), ());
-        
+
         // Add commands from PATH
         if let Some(path_var) = env::var_os("PATH") {
             for path in env::split_paths(&path_var) {
@@ -51,7 +51,7 @@ impl ShellCompleter {
 
     fn complete_command(&self, line: &str) -> Vec<Pair> {
         let mut matches = Vec::new();
-        
+
         // Complete commands
         for cmd in self.commands.keys() {
             if cmd.starts_with(line) {
@@ -78,9 +78,12 @@ impl ShellCompleter {
     fn complete_path(&self, incomplete: &str) -> Vec<Pair> {
         let mut matches = Vec::new();
         let path = Path::new(incomplete);
-        
+
         let (dir_to_search, file_prefix) = if let Some(parent) = path.parent() {
-            (parent.to_path_buf(), path.file_name().and_then(|s| s.to_str()).unwrap_or(""))
+            (
+                parent.to_path_buf(),
+                path.file_name().and_then(|s| s.to_str()).unwrap_or(""),
+            )
         } else {
             (PathBuf::from("."), incomplete)
         };
@@ -109,7 +112,12 @@ impl ShellCompleter {
 impl Completer for ShellCompleter {
     type Candidate = Pair;
 
-    fn complete(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> rustyline::Result<(usize, Vec<Pair>)> {
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Pair>)> {
         let line_up_to_cursor = &line[..pos];
         let words: Vec<&str> = line_up_to_cursor.split_whitespace().collect();
 
@@ -132,4 +140,4 @@ impl Completer for ShellCompleter {
 
         Ok((start, matches))
     }
-} 
+}

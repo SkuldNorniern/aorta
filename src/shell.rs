@@ -7,6 +7,8 @@ use rustyline::DefaultEditor;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub struct Shell {
     editor: DefaultEditor,
@@ -15,6 +17,7 @@ pub struct Shell {
     completer: ShellCompleter,
     history: History,
     flags: Flags,
+    running: Arc<AtomicBool>,
 }
 
 impl Shell {
@@ -22,22 +25,26 @@ impl Shell {
         let editor = DefaultEditor::new()?;
         let current_dir = env::current_dir()?.to_string_lossy().to_string();
         let mut config = Config::new()?;
-        
-        // Load config before setting up other components
         config.load()?;
         
-        // After loading config, update the current process environment
         if let Some(path) = env::var_os("PATH") {
-            env::set_var("PATH", path);  // Refresh PATH in current process
+            env::set_var("PATH", path);
         }
 
         let completer = ShellCompleter::new();
-
-        // Setup history with default values
         let history_file = dirs::home_dir()
             .ok_or(ShellError::HomeDirNotFound)?
             .join(".aorta_history");
         let history = History::new(history_file, 1000)?;
+        
+        let running = Arc::new(AtomicBool::new(true));
+        
+        // Set up initial CTRL-C handler
+        let r = running.clone();
+        ctrlc::set_handler(move || {
+            // Do nothing - this prevents the shell from exiting
+            println!("\nUse 'exit' to exit the shell");
+        })?;
 
         Ok(Shell {
             editor,
@@ -46,6 +53,7 @@ impl Shell {
             completer,
             history,
             flags,
+            running,
         })
     }
 
@@ -180,13 +188,21 @@ impl Shell {
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
-            // Create a fresh environment with our current variables
             .env_clear()
             .envs(env::vars())
-            .spawn()?;  // Use spawn() instead of output()
+            .spawn()?;
+
+        // Store the child's pid
+        let pid = child.id();
+
+        // Set up signal handling using a different approach
+        unsafe {
+            // Install a signal handler for SIGINT
+            libc::signal(libc::SIGINT, handle_sigint as libc::sighandler_t);
+        }
 
         // Wait for the child process to complete
-        match child.wait() {
+        let result = match child.wait() {
             Ok(status) => {
                 if !status.success() {
                     println!("Process exited with status: {}", status);
@@ -200,6 +216,13 @@ impl Shell {
                     Err(e.into())
                 }
             }
-        }
+        };
+
+        result
     }
+}
+
+// External signal handler
+extern "C" fn handle_sigint(_: i32) {
+    // Do nothing, let the child process handle the signal
 }

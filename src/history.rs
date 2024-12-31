@@ -1,8 +1,8 @@
+use crate::error::ShellError;
 use std::collections::BTreeSet;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use crate::error::ShellError;
 
 pub struct History {
     entries: BTreeSet<String>,
@@ -13,12 +13,12 @@ pub struct History {
 impl History {
     pub fn new(history_file: PathBuf, max_entries: usize) -> Result<Self, ShellError> {
         let mut entries = BTreeSet::new();
-        
+
         // Load existing history if file exists
         if history_file.exists() {
             let file = File::open(&history_file)?;
             let reader = BufReader::new(file);
-            
+
             for line in reader.lines() {
                 let line = line?;
                 if !line.trim().is_empty() {
@@ -53,7 +53,7 @@ impl History {
             .append(true)
             .create(true)
             .open(&self.file_path)?;
-            
+
         writeln!(file, "{}", entry)?;
         Ok(())
     }
@@ -65,4 +65,4 @@ impl History {
             .cloned()
             .collect()
     }
-} 
+}

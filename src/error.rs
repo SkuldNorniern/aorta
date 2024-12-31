@@ -7,6 +7,7 @@ pub enum ShellError {
     CommandNotFound(String),
     ConfigError(String, String),
     FlagError(String),
+    CtrlC(String),
 }
 
 impl From<rustyline::error::ReadlineError> for ShellError {
@@ -21,6 +22,12 @@ impl From<std::io::Error> for ShellError {
     }
 }
 
+impl From<ctrlc::Error> for ShellError {
+    fn from(err: ctrlc::Error) -> Self {
+        ShellError::CtrlC(err.to_string())
+    }
+}
+
 impl std::fmt::Display for ShellError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -31,6 +38,7 @@ impl std::fmt::Display for ShellError {
             ShellError::CommandNotFound(cmd) => write!(f, "command not found: {}", cmd),
             ShellError::ConfigError(path, msg) => write!(f, "Config error in {}: {}", path, msg),
             ShellError::FlagError(msg) => write!(f, "Flag error: {}", msg),
+            ShellError::CtrlC(msg) => write!(f, "Ctrl-C error: {}", msg),
         }
     }
 }
