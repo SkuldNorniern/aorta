@@ -1,25 +1,34 @@
 use crate::error::ShellError;
-use std::path::{Path, PathBuf};
-use std::fs;
-use std::env;
 use std::collections::HashMap;
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 pub struct Config {
     rc_path: PathBuf,
     profile_path: PathBuf,
     aliases: HashMap<String, String>,
+    env_vars: HashMap<String, String>,
 }
 
 impl Config {
     pub fn new() -> Result<Self, ShellError> {
-        let home_dir = dirs::home_dir()
-            .ok_or(ShellError::HomeDirNotFound)?;
+        let home = env::var("HOME").map_err(|_| ShellError::HomeDirNotFound)?;
+        let home_path = PathBuf::from(home);
 
-        Ok(Config {
-            rc_path: home_dir.join(".aortarc"),
-            profile_path: home_dir.join(".profile"),
+        let mut config = Config {
+            rc_path: home_path.join(".aortarc"),
+            profile_path: home_path.join(".profile"),
             aliases: HashMap::new(),
-        })
+            env_vars: HashMap::new(),
+        };
+        
+        // Initialize with current environment
+        for (key, value) in std::env::vars() {
+            config.env_vars.insert(key, value);
+        }
+        
+        Ok(config)
     }
 
     pub fn get_alias(&self, cmd: &str) -> Option<&String> {
@@ -30,10 +39,10 @@ impl Config {
         // Store paths locally to avoid self-referential borrows
         let profile_path = self.profile_path.clone();
         let rc_path = self.rc_path.clone();
-        
+
         // Load .profile first (if it exists)
         self.source_if_exists(&profile_path)?;
-        
+
         // Then load .aortarc (if it exists)
         self.source_if_exists(&rc_path)?;
 
@@ -42,25 +51,90 @@ impl Config {
 
     fn source_if_exists(&mut self, path: &Path) -> Result<(), ShellError> {
         if path.exists() {
-            let content = fs::read_to_string(path)
-                .map_err(|e| ShellError::ConfigError(path.to_string_lossy().to_string(), e.to_string()))?;
+            let content = fs::read_to_string(path).map_err(|e| {
+                ShellError::ConfigError(path.to_string_lossy().to_string(), e.to_string())
+            })?;
 
             // Process each line in the config file
             for line in content.lines() {
-                let line = line.trim();
-                
-                // Skip empty lines and comments
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-
-                // Process different types of config lines
-                if let Some((key, value)) = parse_env_var(line) {
-                    env::set_var(key, value);
-                } else if let Some((alias_name, alias_cmd)) = parse_alias(line) {
-                    self.aliases.insert(alias_name, alias_cmd);
-                }
+                self.process_line(line)?;
             }
+        }
+        Ok(())
+    }
+
+    fn process_line(&mut self, line: &str) -> Result<(), ShellError> {
+        // Skip empty lines and comments
+        if line.trim().is_empty() || line.trim_start().starts_with('#') {
+            return Ok(());
+        }
+
+        // Handle export statements
+        if line.starts_with("export ") {
+            let var_def = line["export ".len()..].trim();
+            return self.process_env_var(var_def);
+        }
+
+        // Handle direct PATH assignments
+        if line.starts_with("PATH=") {
+            return self.process_path_var(&line["PATH=".len()..]);
+        }
+
+        // Handle aliases
+        if line.starts_with("alias ") {
+            return self.process_alias(line);
+        }
+
+        Ok(())
+    }
+
+    fn process_env_var(&mut self, var_def: &str) -> Result<(), ShellError> {
+        if let Some((name, value)) = var_def.split_once('=') {
+            let name = name.trim();
+            let mut value = value.trim();
+            
+            // Remove quotes if present
+            if value.starts_with('"') && value.ends_with('"') {
+                value = &value[1..value.len()-1];
+            }
+
+            // Expand any variables in the value
+            let expanded_value = self.expand_value(value);
+
+            // Store in our internal map and set system env var
+            self.env_vars.insert(name.to_string(), expanded_value.clone());
+            std::env::set_var(name, expanded_value);
+        }
+        Ok(())
+    }
+
+    fn process_path_var(&mut self, value: &str) -> Result<(), ShellError> {
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let mut new_path = value.replace("$PATH", &current_path);
+        
+        // Expand $HOME
+        if let Some(home) = std::env::var_os("HOME") {
+            new_path = new_path.replace("$HOME", home.to_str().unwrap());
+        }
+
+        // Store in our internal map and set system PATH
+        self.env_vars.insert("PATH".to_string(), new_path.clone());
+        std::env::set_var("PATH", new_path);
+        Ok(())
+    }
+
+    fn process_alias(&mut self, line: &str) -> Result<(), ShellError> {
+        if let Some((name, command)) = line["alias ".len()..].split_once('=') {
+            let name = name.trim();
+            let mut command = command.trim();
+            
+            // Remove surrounding quotes if present
+            if (command.starts_with('\'') && command.ends_with('\'')) ||
+               (command.starts_with('"') && command.ends_with('"')) {
+                command = &command[1..command.len()-1];
+            }
+
+            self.aliases.insert(name.to_string(), command.to_string());
         }
         Ok(())
     }
@@ -77,40 +151,25 @@ impl Config {
     }
 
     pub fn get_aliases(&self) -> std::collections::BTreeMap<String, String> {
-        self.aliases.iter()
+        self.aliases
+            .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     }
-}
 
-fn parse_env_var(line: &str) -> Option<(String, String)> {
-    if line.starts_with("export ") {
-        let parts: Vec<&str> = line["export ".len()..].splitn(2, '=').collect();
-        if parts.len() == 2 {
-            let key = parts[0].trim().to_string();
-            // Remove quotes if they exist
-            let value = parts[1].trim()
-                .trim_matches('"')
-                .trim_matches('\'')
-                .to_string();
-            return Some((key, value));
+    fn expand_value(&self, value: &str) -> String {
+        let mut result = value.to_string();
+        
+        // Expand $HOME
+        if let Ok(home) = std::env::var("HOME") {
+            result = result.replace("$HOME", &home);
         }
-    }
-    None
-}
-
-fn parse_alias(line: &str) -> Option<(String, String)> {
-    if line.starts_with("alias ") {
-        let alias_def = line["alias ".len()..].trim();
-        let parts: Vec<&str> = alias_def.splitn(2, '=').collect();
-        if parts.len() == 2 {
-            let name = parts[0].trim().to_string();
-            let command = parts[1].trim()
-                .trim_matches('"')
-                .trim_matches('\'')
-                .to_string();
-            return Some((name, command));
+        
+        // Expand $PATH
+        if let Ok(path) = std::env::var("PATH") {
+            result = result.replace("$PATH", &path);
         }
+        
+        result
     }
-    None
 }

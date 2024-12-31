@@ -1,5 +1,5 @@
-use aorta::shell::Shell;
 use aorta::flags::Flags;
+use aorta::shell::Shell;
 use std::env;
 
 fn main() -> Result<(), aorta::error::ShellError> {

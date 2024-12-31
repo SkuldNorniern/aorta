@@ -1,7 +1,7 @@
-use crate::error::ShellError;
-use crate::config::Config;
-use crate::flags::Flags;
 use crate::completer::ShellCompleter;
+use crate::config::Config;
+use crate::error::ShellError;
+use crate::flags::Flags;
 use crate::history::History;
 use rustyline::DefaultEditor;
 use std::env;
@@ -22,10 +22,17 @@ impl Shell {
         let editor = DefaultEditor::new()?;
         let current_dir = env::current_dir()?.to_string_lossy().to_string();
         let mut config = Config::new()?;
+        
+        // Load config before setting up other components
         config.load()?;
         
+        // After loading config, update the current process environment
+        if let Some(path) = env::var_os("PATH") {
+            env::set_var("PATH", path);  // Refresh PATH in current process
+        }
+
         let completer = ShellCompleter::new();
-        
+
         // Setup history with default values
         let history_file = dirs::home_dir()
             .ok_or(ShellError::HomeDirNotFound)?
@@ -54,13 +61,13 @@ impl Shell {
                 Ok(line) => {
                     // Add to history
                     self.history.add(line.clone())?;
-                    
+
                     if let Err(e) = self.editor.add_history_entry(line.as_str()) {
                         if !self.flags.is_set("quiet") {
                             eprintln!("Warning: Couldn't add to history: {}", e);
                         }
                     }
-                    
+
                     if let Err(e) = self.execute_command(&line) {
                         if !self.flags.is_set("quiet") {
                             eprintln!("{}", e);
@@ -108,6 +115,10 @@ impl Shell {
     fn execute_command(&mut self, command: &str) -> Result<(), ShellError> {
         // Expand aliases before processing the command
         let expanded_command = self.config.expand_aliases(command);
+        
+        // Expand environment variables
+        let expanded_command = self.expand_env_vars(&expanded_command);
+        
         let args: Vec<&str> = expanded_command.split_whitespace().collect();
 
         if args.is_empty() {
@@ -120,6 +131,34 @@ impl Shell {
             _ => self.spawn_process(&args)?,
         }
         Ok(())
+    }
+
+    fn expand_env_vars(&self, input: &str) -> String {
+        let mut result = input.to_string();
+        
+        // Handle $VAR style variables
+        while let Some(dollar_pos) = result.find('$') {
+            if dollar_pos + 1 >= result.len() {
+                break;
+            }
+            
+            // Find the end of the variable name
+            let var_end = result[dollar_pos + 1..]
+                .find(|c: char| !c.is_alphanumeric() && c != '_')
+                .map_or(result.len(), |pos| pos + dollar_pos + 1);
+            
+            let var_name = &result[dollar_pos + 1..var_end];
+            
+            // Get the value from environment
+            if let Ok(value) = std::env::var(var_name) {
+                result.replace_range(dollar_pos..var_end, &value);
+            } else {
+                // If variable not found, replace with empty string
+                result.replace_range(dollar_pos..var_end, "");
+            }
+        }
+        
+        result
     }
 
     fn change_directory(&mut self, path: Option<&str>) -> Result<(), ShellError> {
@@ -136,17 +175,21 @@ impl Shell {
     }
 
     fn spawn_process(&self, args: &[&str]) -> Result<(), ShellError> {
-        let result = Command::new(args[0])
+        let mut child = Command::new(args[0])
             .args(&args[1..])
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
-            .output();
+            // Create a fresh environment with our current variables
+            .env_clear()
+            .envs(env::vars())
+            .spawn()?;  // Use spawn() instead of output()
 
-        match result {
-            Ok(output) => {
-                if !output.status.success() {
-                    println!("Process exited with status: {}", output.status);
+        // Wait for the child process to complete
+        match child.wait() {
+            Ok(status) => {
+                if !status.success() {
+                    println!("Process exited with status: {}", status);
                 }
                 Ok(())
             }
