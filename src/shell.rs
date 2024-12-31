@@ -1,55 +1,88 @@
 use crate::error::ShellError;
+use crate::config::Config;
+use crate::flags::Flags;
+use crate::completer::ShellCompleter;
+use crate::history::History;
 use rustyline::DefaultEditor;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use crate::config::Config;
 
 pub struct Shell {
     editor: DefaultEditor,
     current_dir: String,
     config: Config,
+    completer: ShellCompleter,
+    history: History,
+    flags: Flags,
 }
 
 impl Shell {
-    pub fn new() -> Result<Self, ShellError> {
+    pub fn new(flags: Flags) -> Result<Self, ShellError> {
         let editor = DefaultEditor::new()?;
         let current_dir = env::current_dir()?.to_string_lossy().to_string();
         let mut config = Config::new()?;
         config.load()?;
+        
+        let completer = ShellCompleter::new();
+        
+        // Setup history with default values
+        let history_file = dirs::home_dir()
+            .ok_or(ShellError::HomeDirNotFound)?
+            .join(".aorta_history");
+        let history = History::new(history_file, 1000)?;
 
         Ok(Shell {
             editor,
             current_dir,
             config,
+            completer,
+            history,
+            flags,
         })
     }
 
     pub fn run(&mut self) -> Result<(), ShellError> {
         self.register_as_shell()?;
 
+        // Update completer with current aliases
+        self.completer.update_aliases(self.config.get_aliases());
+
         loop {
             let prompt = format!("{} > ", self.current_dir);
             match self.editor.readline(&prompt) {
                 Ok(line) => {
+                    // Add to history
+                    self.history.add(line.clone())?;
+                    
                     if let Err(e) = self.editor.add_history_entry(line.as_str()) {
-                        eprintln!("Warning: Couldn't add to history: {}", e);
+                        if !self.flags.is_set("quiet") {
+                            eprintln!("Warning: Couldn't add to history: {}", e);
+                        }
                     }
                     
                     if let Err(e) = self.execute_command(&line) {
-                        eprintln!("{}", e);
+                        if !self.flags.is_set("quiet") {
+                            eprintln!("{}", e);
+                        }
                     }
                 }
                 Err(rustyline::error::ReadlineError::Interrupted) => {
-                    println!("CTRL-C");
+                    if !self.flags.is_set("quiet") {
+                        println!("CTRL-C");
+                    }
                     continue;
                 }
                 Err(rustyline::error::ReadlineError::Eof) => {
-                    println!("CTRL-D");
+                    if !self.flags.is_set("quiet") {
+                        println!("CTRL-D");
+                    }
                     break;
                 }
                 Err(e) => {
-                    eprintln!("Error: {}", e);
+                    if !self.flags.is_set("quiet") {
+                        eprintln!("Error: {}", e);
+                    }
                     continue;
                 }
             }

@@ -6,6 +6,7 @@ pub enum ShellError {
     InvalidShellPath,
     CommandNotFound(String),
     ConfigError(String, String),
+    FlagError(String),
 }
 
 impl From<rustyline::error::ReadlineError> for ShellError {
@@ -29,6 +30,7 @@ impl std::fmt::Display for ShellError {
             ShellError::InvalidShellPath => write!(f, "Invalid shell path"),
             ShellError::CommandNotFound(cmd) => write!(f, "command not found: {}", cmd),
             ShellError::ConfigError(path, msg) => write!(f, "Config error in {}: {}", path, msg),
+            ShellError::FlagError(msg) => write!(f, "Flag error: {}", msg),
         }
     }
 }

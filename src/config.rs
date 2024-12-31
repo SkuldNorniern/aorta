@@ -75,6 +75,12 @@ impl Config {
         }
         parts.join(" ")
     }
+
+    pub fn get_aliases(&self) -> std::collections::BTreeMap<String, String> {
+        self.aliases.iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
 }
 
 fn parse_env_var(line: &str) -> Option<(String, String)> {
