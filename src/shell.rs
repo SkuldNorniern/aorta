@@ -7,8 +7,6 @@ use rustyline::DefaultEditor;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 pub struct Shell {
     editor: DefaultEditor,
@@ -17,7 +15,6 @@ pub struct Shell {
     completer: ShellCompleter,
     history: History,
     flags: Flags,
-    running: Arc<AtomicBool>,
 }
 
 impl Shell {
@@ -25,22 +22,25 @@ impl Shell {
         let editor = DefaultEditor::new()?;
         let current_dir = env::current_dir()?.to_string_lossy().to_string();
         let mut config = Config::new()?;
+
+        // Load config before setting up other components
         config.load()?;
-        
+
+        // After loading config, update the current process environment
         if let Some(path) = env::var_os("PATH") {
-            env::set_var("PATH", path);
+            env::set_var("PATH", path); // Refresh PATH in current process
         }
 
         let completer = ShellCompleter::new();
+
+        // Setup history with default values
         let history_file = dirs::home_dir()
             .ok_or(ShellError::HomeDirNotFound)?
             .join(".aorta_history");
         let history = History::new(history_file, 1000)?;
-        
-        let running = Arc::new(AtomicBool::new(true));
-        
+
         // Set up initial CTRL-C handler
-        let r = running.clone();
+        // let _r = running.clone();
         ctrlc::set_handler(move || {
             // Do nothing - this prevents the shell from exiting
             println!("\nUse 'exit' to exit the shell");
@@ -53,7 +53,6 @@ impl Shell {
             completer,
             history,
             flags,
-            running,
         })
     }
 
@@ -123,10 +122,10 @@ impl Shell {
     fn execute_command(&mut self, command: &str) -> Result<(), ShellError> {
         // Expand aliases before processing the command
         let expanded_command = self.config.expand_aliases(command);
-        
+
         // Expand environment variables
         let expanded_command = self.expand_env_vars(&expanded_command);
-        
+
         let args: Vec<&str> = expanded_command.split_whitespace().collect();
 
         if args.is_empty() {
@@ -143,20 +142,20 @@ impl Shell {
 
     fn expand_env_vars(&self, input: &str) -> String {
         let mut result = input.to_string();
-        
+
         // Handle $VAR style variables
         while let Some(dollar_pos) = result.find('$') {
             if dollar_pos + 1 >= result.len() {
                 break;
             }
-            
+
             // Find the end of the variable name
             let var_end = result[dollar_pos + 1..]
                 .find(|c: char| !c.is_alphanumeric() && c != '_')
                 .map_or(result.len(), |pos| pos + dollar_pos + 1);
-            
+
             let var_name = &result[dollar_pos + 1..var_end];
-            
+
             // Get the value from environment
             if let Ok(value) = std::env::var(var_name) {
                 result.replace_range(dollar_pos..var_end, &value);
@@ -165,7 +164,7 @@ impl Shell {
                 result.replace_range(dollar_pos..var_end, "");
             }
         }
-        
+
         result
     }
 
@@ -183,17 +182,29 @@ impl Shell {
     }
 
     fn spawn_process(&self, args: &[&str]) -> Result<(), ShellError> {
-        let mut child = Command::new(args[0])
+        let child = Command::new(args[0])
             .args(&args[1..])
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .env_clear()
             .envs(env::vars())
-            .spawn()?;
+            .spawn();
+
+        // Handle the spawn result first
+        let mut child = match child {
+            Ok(child) => child,
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    eprintln!("aorta: command not found: {}", args[0]);
+                    return Ok(()); // Return early with Ok to avoid showing additional error messages
+                }
+                return Err(e.into());
+            }
+        };
 
         // Store the child's pid
-        let pid = child.id();
+        let _pid = child.id();
 
         // Set up signal handling using a different approach
         unsafe {
@@ -202,7 +213,9 @@ impl Shell {
         }
 
         // Wait for the child process to complete
-        let result = match child.wait() {
+        
+
+        match child.wait() {
             Ok(status) => {
                 if !status.success() {
                     println!("Process exited with status: {}", status);
@@ -216,9 +229,7 @@ impl Shell {
                     Err(e.into())
                 }
             }
-        };
-
-        result
+        }
     }
 }
 

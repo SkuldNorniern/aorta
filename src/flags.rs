@@ -14,6 +14,12 @@ pub struct Flag {
     pub value: Option<String>,
 }
 
+impl Default for Flags {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Flags {
     pub fn new() -> Self {
         let mut flags = HashMap::new();

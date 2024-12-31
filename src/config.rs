@@ -22,12 +22,12 @@ impl Config {
             aliases: HashMap::new(),
             env_vars: HashMap::new(),
         };
-        
+
         // Initialize with current environment
         for (key, value) in std::env::vars() {
             config.env_vars.insert(key, value);
         }
-        
+
         Ok(config)
     }
 
@@ -70,14 +70,14 @@ impl Config {
         }
 
         // Handle export statements
-        if line.starts_with("export ") {
-            let var_def = line["export ".len()..].trim();
+        if let Some(var_def) = line.strip_prefix("export ") {
+            let var_def = var_def.trim();
             return self.process_env_var(var_def);
         }
 
         // Handle direct PATH assignments
-        if line.starts_with("PATH=") {
-            return self.process_path_var(&line["PATH=".len()..]);
+        if let Some(path_value) = line.strip_prefix("PATH=") {
+            return self.process_path_var(path_value);
         }
 
         // Handle aliases
@@ -92,17 +92,18 @@ impl Config {
         if let Some((name, value)) = var_def.split_once('=') {
             let name = name.trim();
             let mut value = value.trim();
-            
+
             // Remove quotes if present
             if value.starts_with('"') && value.ends_with('"') {
-                value = &value[1..value.len()-1];
+                value = &value[1..value.len() - 1];
             }
 
             // Expand any variables in the value
             let expanded_value = self.expand_value(value);
 
             // Store in our internal map and set system env var
-            self.env_vars.insert(name.to_string(), expanded_value.clone());
+            self.env_vars
+                .insert(name.to_string(), expanded_value.clone());
             std::env::set_var(name, expanded_value);
         }
         Ok(())
@@ -111,7 +112,7 @@ impl Config {
     fn process_path_var(&mut self, value: &str) -> Result<(), ShellError> {
         let current_path = std::env::var("PATH").unwrap_or_default();
         let mut new_path = value.replace("$PATH", &current_path);
-        
+
         // Expand $HOME
         if let Some(home) = std::env::var_os("HOME") {
             new_path = new_path.replace("$HOME", home.to_str().unwrap());
@@ -127,11 +128,12 @@ impl Config {
         if let Some((name, command)) = line["alias ".len()..].split_once('=') {
             let name = name.trim();
             let mut command = command.trim();
-            
+
             // Remove surrounding quotes if present
-            if (command.starts_with('\'') && command.ends_with('\'')) ||
-               (command.starts_with('"') && command.ends_with('"')) {
-                command = &command[1..command.len()-1];
+            if (command.starts_with('\'') && command.ends_with('\''))
+                || (command.starts_with('"') && command.ends_with('"'))
+            {
+                command = &command[1..command.len() - 1];
             }
 
             self.aliases.insert(name.to_string(), command.to_string());
@@ -159,17 +161,17 @@ impl Config {
 
     fn expand_value(&self, value: &str) -> String {
         let mut result = value.to_string();
-        
+
         // Expand $HOME
         if let Ok(home) = std::env::var("HOME") {
             result = result.replace("$HOME", &home);
         }
-        
+
         // Expand $PATH
         if let Ok(path) = std::env::var("PATH") {
             result = result.replace("$PATH", &path);
         }
-        
+
         result
     }
 }

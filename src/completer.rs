@@ -10,6 +10,12 @@ pub struct ShellCompleter {
     aliases: BTreeMap<String, String>,
 }
 
+impl Default for ShellCompleter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ShellCompleter {
     pub fn new() -> Self {
         let mut completer = ShellCompleter {
