@@ -1,5 +1,5 @@
 use crate::completer::ShellCompleter;
-use crate::config::Config;
+use crate::core::config::{Config, ConfigError};
 use crate::error::ShellError;
 use crate::flags::Flags;
 use crate::history::History;
@@ -22,7 +22,7 @@ impl Shell {
     pub fn new(flags: Flags) -> Result<Self, ShellError> {
         let editor = DefaultEditor::new()?;
         let current_dir = env::current_dir()?.to_string_lossy().to_string();
-        let mut config = Config::new()?;
+        let mut config = Config::new().map_err(ShellError::from)?;
 
         // Load config before setting up other components
         config.load()?;

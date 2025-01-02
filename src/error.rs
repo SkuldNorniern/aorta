@@ -1,4 +1,5 @@
 use crate::process::ProcessError;
+use crate::core::config::ConfigError;
 
 
 #[derive(Debug)]
@@ -9,7 +10,7 @@ pub enum ShellError {
     InvalidShellPath,
     CommandNotFound(String),
     ProcessError(ProcessError),
-    ConfigError(String, String),
+    ConfigError(ConfigError),
     FlagError(String),
     CtrlC(String),
 }
@@ -38,6 +39,12 @@ impl From<ProcessError> for ShellError {
     }
 }
 
+impl From<ConfigError> for ShellError {
+    fn from(err: ConfigError) -> Self {
+        ShellError::ConfigError(err)
+    }
+}
+
 impl std::fmt::Display for ShellError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -46,7 +53,7 @@ impl std::fmt::Display for ShellError {
             ShellError::HomeDirNotFound => write!(f, "Home directory not found"),
             ShellError::InvalidShellPath => write!(f, "Invalid shell path"),
             ShellError::CommandNotFound(cmd) => write!(f, "command not found: {}", cmd),
-            ShellError::ConfigError(path, msg) => write!(f, "Config error in {}: {}", path, msg),
+            ShellError::ConfigError(e) => write!(f, "Config error: {}", e),
             ShellError::FlagError(msg) => write!(f, "Flag error: {}", msg),
             ShellError::CtrlC(msg) => write!(f, "Ctrl-C error: {}", msg),
             ShellError::ProcessError(e) => write!(f, "Process error: {}", e),

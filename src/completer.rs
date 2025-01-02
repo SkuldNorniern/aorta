@@ -1,13 +1,14 @@
 use rustyline::completion::{Completer, Pair};
 use rustyline::Context;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 pub struct ShellCompleter {
-    commands: BTreeMap<String, ()>,
-    aliases: BTreeMap<String, String>,
+    commands: BTreeMap<Cow<'static, str>, ()>,
+    aliases: BTreeMap<Cow<'static, str>, Cow<'static, str>>,
 }
 
 impl Default for ShellCompleter {
@@ -30,8 +31,8 @@ impl ShellCompleter {
         self.commands.clear();
 
         // Add built-in commands
-        self.commands.insert("cd".to_string(), ());
-        self.commands.insert("exit".to_string(), ());
+        self.commands.insert(Cow::Borrowed("cd"), ());
+        self.commands.insert(Cow::Borrowed("exit"), ());
 
         // Add commands from PATH
         if let Some(path_var) = env::var_os("PATH") {
@@ -41,7 +42,7 @@ impl ShellCompleter {
                         if let Ok(file_type) = entry.file_type() {
                             if file_type.is_file() || file_type.is_symlink() {
                                 if let Some(name) = entry.file_name().to_str() {
-                                    self.commands.insert(name.to_string(), ());
+                                    self.commands.insert(Cow::Owned(name.to_string()), ());
                                 }
                             }
                         }
@@ -51,8 +52,10 @@ impl ShellCompleter {
         }
     }
 
-    pub fn update_aliases(&mut self, aliases: BTreeMap<String, String>) {
-        self.aliases = aliases;
+    pub fn update_aliases(&mut self, aliases: BTreeMap<Cow<'_, str>, Cow<'_, str>>) {
+        self.aliases = aliases.into_iter()
+            .map(|(k, v)| (Cow::Owned(k.into_owned()), Cow::Owned(v.into_owned())))
+            .collect();
     }
 
     fn complete_command(&self, line: &str) -> Vec<Pair> {
@@ -62,8 +65,8 @@ impl ShellCompleter {
         for cmd in self.commands.keys() {
             if cmd.starts_with(line) {
                 matches.push(Pair {
-                    display: cmd.clone(),
-                    replacement: cmd.clone(),
+                    display: cmd.to_string(),
+                    replacement: cmd.to_string(),
                 });
             }
         }
@@ -73,7 +76,7 @@ impl ShellCompleter {
             if alias.starts_with(line) {
                 matches.push(Pair {
                     display: format!("{} (alias)", alias),
-                    replacement: alias.clone(),
+                    replacement: alias.to_string(),
                 });
             }
         }
@@ -99,11 +102,13 @@ impl ShellCompleter {
                 if let Some(name) = entry.file_name().to_str() {
                     if name.starts_with(file_prefix) {
                         let full_path = entry.path();
-                        if full_path.is_dir() {
-                            name.to_string().push('/');
-                        }
+                        let display_name = if full_path.is_dir() {
+                            format!("{}/", name)
+                        } else {
+                            name.to_string()
+                        };
                         matches.push(Pair {
-                            display: name.to_string(),
+                            display: display_name,
                             replacement: full_path.to_string_lossy().to_string(),
                         });
                     }
