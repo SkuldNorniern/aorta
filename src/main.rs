@@ -13,7 +13,7 @@ fn main() -> Result<(), aorta::error::ShellError> {
     }
 
     if flags.is_set("version") {
-        println!("Aorta v0.1.0");
+        println!("Aorta {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
 
