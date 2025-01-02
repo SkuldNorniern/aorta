@@ -1,3 +1,4 @@
+use crate::core::commands::CommandError;
 use crate::core::config::ConfigError;
 use crate::process::ProcessError;
 
@@ -12,6 +13,7 @@ pub enum ShellError {
     ConfigError(ConfigError),
     FlagError(String),
     CtrlC(String),
+    CommandError(CommandError),
 }
 
 impl From<rustyline::error::ReadlineError> for ShellError {
@@ -44,6 +46,12 @@ impl From<ConfigError> for ShellError {
     }
 }
 
+impl From<CommandError> for ShellError {
+    fn from(err: CommandError) -> Self {
+        ShellError::CommandError(err)
+    }
+}
+
 impl std::fmt::Display for ShellError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -56,6 +64,7 @@ impl std::fmt::Display for ShellError {
             ShellError::FlagError(msg) => write!(f, "Flag error: {}", msg),
             ShellError::CtrlC(msg) => write!(f, "Ctrl-C error: {}", msg),
             ShellError::ProcessError(e) => write!(f, "Process error: {}", e),
+            ShellError::CommandError(e) => write!(f, "Command error: {}", e),
         }
     }
 }

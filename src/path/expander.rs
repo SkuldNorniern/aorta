@@ -1,8 +1,14 @@
-use std::path::{Path, PathBuf};
 use crate::error::ShellError;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
 pub struct PathExpander;
+
+impl Default for PathExpander {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl PathExpander {
     pub fn new() -> Self {
@@ -46,4 +52,4 @@ impl PathExpander {
     pub fn get_home_dir(&self) -> Result<PathBuf, ShellError> {
         dirs::home_dir().ok_or(ShellError::HomeDirNotFound)
     }
-} 
+}

@@ -3,5 +3,6 @@ pub mod flags;
 pub mod shell;
 
 pub mod core;
-pub mod process;
 pub mod input;
+pub mod path;
+pub mod process;

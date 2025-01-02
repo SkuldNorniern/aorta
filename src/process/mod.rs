@@ -1,7 +1,9 @@
 use std::fmt;
 
-pub mod executor;
+mod executor;
 pub mod signal;
+
+pub use executor::CommandExecutor as ProcessExecutor;
 
 #[derive(Debug)]
 pub enum ProcessError {

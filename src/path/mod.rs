@@ -1,3 +1,3 @@
 mod expander;
 
-pub use expander::PathExpander; 
+pub use expander::PathExpander;

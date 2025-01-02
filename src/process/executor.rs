@@ -5,6 +5,7 @@ use super::{signal, ProcessError};
 
 use crate::flags::Flags;
 
+#[derive(Clone)]
 pub struct CommandExecutor {
     quiet_mode: bool,
 }
