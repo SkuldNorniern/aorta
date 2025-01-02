@@ -60,7 +60,12 @@ impl<'a> ConfigLoader<'a> {
 
     fn process_path_var(&self, value: &str, config: &mut Config) -> Result<(), ConfigError> {
         let current_path = std::env::var("PATH").unwrap_or_default();
-        let value = value.replace("$PATH", &current_path);
+        let mut value = value.replace("$PATH", &current_path);
+
+        // Remove quotes if present
+        if value.starts_with('"') && value.ends_with('"') {
+            value = (&value[1..value.len() - 1]).to_string();
+        }
 
         // Use EnvVarManager's expand_value for $HOME expansion
         let expanded_path = config.env_vars.expand_value(&value);
