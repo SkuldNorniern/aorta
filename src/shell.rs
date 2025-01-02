@@ -1,14 +1,22 @@
-use crate::completer::ShellCompleter;
-use crate::core::config::Config;
-use crate::error::ShellError;
-use crate::flags::Flags;
-use crate::history::History;
-use crate::process::executor::CommandExecutor;
-use rustyline::config::Configurer;
-use rustyline::history::FileHistory;
-use rustyline::Editor;
-use std::env;
-use std::path::{Path, PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
+
+use crate::{
+    core::config::Config,
+    error::ShellError,
+    flags::Flags,
+    input::{History, ShellCompleter},
+    process::executor::CommandExecutor,
+};
+
+use rustyline::{
+    config::Configurer,
+    history::FileHistory,
+    Editor,
+};
+
 
 pub struct Shell {
     editor: Editor<ShellCompleter, FileHistory>,
