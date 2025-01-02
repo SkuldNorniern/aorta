@@ -72,7 +72,7 @@ impl ShellCompleter {
             if cmd.starts_with(input) {
                 matches.push(Pair {
                     display: cmd.to_string(),
-                    replacement: cmd.to_string(),  // Don't add space here
+                    replacement: cmd.to_string(), // Don't add space here
                 });
             }
         }
@@ -82,7 +82,7 @@ impl ShellCompleter {
             if alias.starts_with(input) {
                 matches.push(Pair {
                     display: format!("{} (alias)", alias),
-                    replacement: alias.to_string(),  // Don't add space here
+                    replacement: alias.to_string(), // Don't add space here
                 });
             }
         }
@@ -91,15 +91,20 @@ impl ShellCompleter {
     }
 
     fn complete_path(&self, incomplete: &str) -> Vec<Pair> {
-        let mut matches = Vec::new();
-        let path = Path::new(incomplete);
+        let (dir_to_search, file_prefix, is_absolute) = self.parse_path_input(incomplete);
+        let base_path = if is_absolute { PathBuf::from("/") } else { PathBuf::new() };
+        
+        self.get_path_matches(&dir_to_search, file_prefix, is_absolute, base_path)
+    }
 
-        // Handle absolute paths and current directory
+    fn parse_path_input(&self, incomplete: &str) -> (PathBuf, String, bool) {
+        let path = Path::new(incomplete);
+        let is_absolute = incomplete.starts_with('/');
+
         let (dir_to_search, file_prefix) = if incomplete.is_empty() {
-            (PathBuf::from("."), "")
+            (PathBuf::from("."), String::new())
         } else if incomplete.ends_with('/') {
-            // If path ends with /, search inside that directory
-            (PathBuf::from(incomplete), "")
+            (PathBuf::from(incomplete), String::new())
         } else if let Some(parent) = path.parent() {
             (
                 if parent.as_os_str().is_empty() {
@@ -107,58 +112,40 @@ impl ShellCompleter {
                 } else {
                     parent.to_path_buf()
                 },
-                path.file_name().and_then(|s| s.to_str()).unwrap_or(""),
+                path.file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string(),
             )
         } else {
-            (PathBuf::from("."), incomplete)
+            (PathBuf::from("."), incomplete.to_string())
         };
 
-        // Handle absolute paths starting with /
-        let is_absolute = incomplete.starts_with('/');
-        let base_path = if is_absolute {
-            PathBuf::from("/")
-        } else {
-            PathBuf::new()
-        };
+        (dir_to_search, file_prefix, is_absolute)
+    }
 
-        // Read directory entries
-        if let Ok(entries) = fs::read_dir(&dir_to_search) {
+    fn get_path_matches(
+        &self,
+        dir_to_search: &Path,
+        file_prefix: String,
+        is_absolute: bool,
+        base_path: PathBuf,
+    ) -> Vec<Pair> {
+        let mut matches = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(dir_to_search) {
             for entry in entries.filter_map(Result::ok) {
                 if let Some(name) = entry.file_name().to_str() {
-                    if name.starts_with(file_prefix) {
-                        let path = entry.path();
-                        let is_dir = path.is_dir();
-                        
-                        // Create the relative or absolute path for display and replacement
-                        let relative_path = if dir_to_search == PathBuf::from(".") {
-                            name.to_string()
-                        } else {
-                            let mut full_path = if is_absolute {
-                                base_path.join(&dir_to_search)
-                            } else {
-                                dir_to_search.clone()
-                            };
-                            full_path.push(name);
-                            full_path.to_string_lossy().into_owned()
-                        };
-
-                        // Create the display and replacement strings
-                        let (display, replacement) = if is_dir {
-                            (
-                                format!("{}/", relative_path),
-                                format!("{}/", relative_path)
-                            )
-                        } else {
-                            (
-                                relative_path.clone(),
-                                format!("{} ", relative_path)
-                            )
-                        };
-
-                        matches.push(Pair {
-                            display,
-                            replacement,
-                        });
+                    if name.starts_with(&file_prefix) {
+                        if let Some(pair) = self.create_completion_pair(
+                            name,
+                            &entry.path(),
+                            dir_to_search,
+                            is_absolute,
+                            &base_path,
+                        ) {
+                            matches.push(pair);
+                        }
                     }
                 }
             }
@@ -166,6 +153,43 @@ impl ShellCompleter {
 
         matches.sort_by(|a, b| a.display.cmp(&b.display));
         matches
+    }
+
+    fn create_completion_pair(
+        &self,
+        name: &str,
+        path: &Path,
+        dir_to_search: &Path,
+        is_absolute: bool,
+        base_path: &Path,
+    ) -> Option<Pair> {
+        let is_dir = path.is_dir();
+        
+        let relative_path = if dir_to_search == Path::new(".") {
+            name.to_string()
+        } else {
+            let mut full_path = if is_absolute {
+                base_path.join(dir_to_search)
+            } else {
+                dir_to_search.to_path_buf()
+            };
+            full_path.push(name);
+            full_path.to_string_lossy().into_owned()
+        };
+
+        let (display, replacement) = if is_dir {
+            (
+                format!("{}/", relative_path),
+                format!("{}/", relative_path),
+            )
+        } else {
+            (
+                relative_path.clone(),
+                format!("{} ", relative_path),
+            )
+        };
+
+        Some(Pair { display, replacement })
     }
 }
 
@@ -187,10 +211,10 @@ impl Completer for ShellCompleter {
     ) -> rustyline::Result<(usize, Vec<Pair>)> {
         // Get the text up to the cursor position
         let line_up_to_cursor = &line[..pos];
-        
+
         // Split into words and get the word being completed
         let mut words: Vec<&str> = line_up_to_cursor.split_whitespace().collect();
-        
+
         // If the line ends with a space, add an empty word
         if line_up_to_cursor.ends_with(' ') {
             words.push("");
@@ -202,7 +226,7 @@ impl Completer for ShellCompleter {
                 let word = words[0];
                 let start = line_up_to_cursor.rfind(word).unwrap_or(0);
                 Ok((start, self.complete_command(word)))
-            },
+            }
             _ => {
                 let last_word = words.last().unwrap_or(&"");
                 let start = if last_word.is_empty() {
