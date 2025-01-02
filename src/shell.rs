@@ -5,7 +5,6 @@ use crate::{
     error::ShellError,
     flags::Flags,
     input::{History, ShellCompleter},
-    path::PathExpander,
 };
 
 use rustyline::{config::Configurer, history::FileHistory, Editor};
@@ -18,7 +17,6 @@ pub struct Shell {
     history: History,
     flags: Flags,
     executor: CommandExecutor,
-    path_expander: PathExpander,
 }
 
 impl Shell {
@@ -51,7 +49,6 @@ impl Shell {
         })?;
 
         let executor = CommandExecutor::new(&flags)?;
-        let path_expander = PathExpander::new();
 
         Ok(Shell {
             editor,
@@ -61,7 +58,6 @@ impl Shell {
             history,
             flags,
             executor,
-            path_expander,
         })
     }
 
@@ -181,14 +177,5 @@ impl Shell {
         }
 
         result
-    }
-
-    fn change_directory(&mut self, path: Option<&str>) -> Result<(), ShellError> {
-        let path_str = path.unwrap_or("~");
-        let expanded_path = self.path_expander.expand(path_str)?;
-
-        env::set_current_dir(&expanded_path)?;
-        self.current_dir = env::current_dir()?.to_string_lossy().to_string();
-        Ok(())
     }
 }

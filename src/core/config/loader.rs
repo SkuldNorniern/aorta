@@ -64,7 +64,7 @@ impl<'a> ConfigLoader<'a> {
 
         // Remove quotes if present
         if value.starts_with('"') && value.ends_with('"') {
-            value = (&value[1..value.len() - 1]).to_string();
+            value = value[1..value.len() - 1].to_string();
         }
 
         // Use EnvVarManager's expand_value for $HOME expansion

@@ -29,10 +29,10 @@ impl PathExpander {
             dirs::home_dir().ok_or(ShellError::HomeDirNotFound)
         } else {
             let without_tilde = &path[1..];
-            if without_tilde.starts_with('/') {
+            if let Some(stripped) = without_tilde.strip_prefix('/') {
                 // "~/path"
                 let mut home_path = dirs::home_dir().ok_or(ShellError::HomeDirNotFound)?;
-                for part in without_tilde[1..].split('/') {
+                for part in stripped.split('/') {
                     if !part.is_empty() {
                         home_path.push(part);
                     }
