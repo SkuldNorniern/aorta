@@ -1,23 +1,14 @@
-use std::{
-    env,
-    path::{Path, PathBuf},
-};
+use std::env;
 
 use crate::{
-    core::config::Config,
+    core::{commands::CommandExecutor, config::Config},
     error::ShellError,
     flags::Flags,
     input::{History, ShellCompleter},
-    process::executor::CommandExecutor,
     path::PathExpander,
 };
 
-use rustyline::{
-    config::Configurer,
-    history::FileHistory,
-    Editor,
-};
-
+use rustyline::{config::Configurer, history::FileHistory, Editor};
 
 pub struct Shell {
     editor: Editor<ShellCompleter, FileHistory>,
@@ -140,18 +131,28 @@ impl Shell {
         // Expand aliases before processing the command
         let expanded_command = self.config.expand_aliases(command);
         let expanded_command = self.expand_env_vars(&expanded_command);
+
+        // Convert to owned Strings for the command system
         let args: Vec<&str> = expanded_command.split_whitespace().collect();
 
         if args.is_empty() {
             return Ok(());
         }
 
-        match args[0] {
-            "cd" => self.change_directory(args.get(1).copied())?,
-            "exit" => std::process::exit(0),
-            _ => self.executor.spawn_process(&args)?,
+        let command_name = args[0];
+        let command_args: Vec<String> = args[1..].iter().map(|&s| s.to_string()).collect();
+
+        // First try to execute as a built-in command
+        match self.executor.execute(command_name, &command_args) {
+            Ok(_) => {
+                // Update current_dir after command execution
+                self.current_dir = env::current_dir()?
+                    .to_string_lossy()
+                    .to_string();
+                Ok(())
+            }
+            Err(e) => Err(ShellError::CommandError(e)),
         }
-        Ok(())
     }
 
     fn expand_env_vars(&self, input: &str) -> String {
