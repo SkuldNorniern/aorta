@@ -1,6 +1,5 @@
-use crate::process::ProcessError;
 use crate::core::config::ConfigError;
-
+use crate::process::ProcessError;
 
 #[derive(Debug)]
 pub enum ShellError {

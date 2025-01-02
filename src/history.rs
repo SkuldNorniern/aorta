@@ -14,7 +14,7 @@ mod file_ops {
 
     pub fn load_entries(file_path: &PathBuf) -> Result<BTreeSet<Cow<'static, str>>, ShellError> {
         let mut entries = BTreeSet::new();
-        
+
         if file_path.exists() {
             let file = File::open(file_path)?;
             let reader = BufReader::new(file);
@@ -26,7 +26,7 @@ mod file_ops {
                 }
             }
         }
-        
+
         Ok(entries)
     }
 
@@ -84,4 +84,3 @@ impl History {
             .collect()
     }
 }
-

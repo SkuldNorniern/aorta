@@ -1,10 +1,7 @@
 use std::env;
 use std::process::{Command, Stdio};
 
-use super::{
-    signal,
-    ProcessError,
-};
+use super::{signal, ProcessError};
 
 use crate::flags::Flags;
 

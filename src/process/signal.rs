@@ -1,6 +1,6 @@
 use crate::process::ProcessError;
 
-use libc::{signal, sighandler_t, SIGINT};
+use libc::{sighandler_t, signal, SIGINT};
 
 pub extern "C" fn handle_sigint(_: i32) {
     // Do nothing, let the child process handle the signal
