@@ -1,15 +1,19 @@
 use crate::completer::ShellCompleter;
-use crate::core::config::{Config, ConfigError};
+use crate::core::config::Config;
 use crate::error::ShellError;
 use crate::flags::Flags;
 use crate::history::History;
 use crate::process::executor::CommandExecutor;
+use rustyline::config::Configurer;
+use rustyline::error::ReadlineError;
+use rustyline::history::FileHistory;
 use rustyline::DefaultEditor;
+use rustyline::Editor;
 use std::env;
 use std::path::{Path, PathBuf};
 
 pub struct Shell {
-    editor: DefaultEditor,
+    editor: Editor<ShellCompleter, FileHistory>,
     current_dir: String,
     config: Config,
     completer: ShellCompleter,
@@ -20,9 +24,15 @@ pub struct Shell {
 
 impl Shell {
     pub fn new(flags: Flags) -> Result<Self, ShellError> {
-        let editor = DefaultEditor::new()?;
+        let completer = ShellCompleter::new();
+        let mut editor = Editor::<ShellCompleter, FileHistory>::new()?;
+
+        // First create the editor, then set the helper
+        editor.set_helper(Some(completer.clone()));
+        editor.set_auto_add_history(true);
+
         let current_dir = env::current_dir()?.to_string_lossy().to_string();
-        let mut config = Config::new().map_err(ShellError::from)?;
+        let mut config = Config::new()?;
 
         // Load config before setting up other components
         config.load()?;
@@ -31,8 +41,6 @@ impl Shell {
         if let Some(path) = env::var_os("PATH") {
             env::set_var("PATH", path);
         }
-
-        let completer = ShellCompleter::new();
 
         let history_file = dirs::home_dir()
             .ok_or(ShellError::HomeDirNotFound)?
@@ -58,8 +66,7 @@ impl Shell {
 
     pub fn run(&mut self) -> Result<(), ShellError> {
         self.register_as_shell()?;
-
-        // Update completer with current aliases
+        self.completer.refresh_commands();
         self.completer.update_aliases(self.config.get_aliases());
 
         loop {
@@ -67,7 +74,7 @@ impl Shell {
             match self.editor.readline(&prompt) {
                 Ok(line) => {
                     // Add to history
-                    self.history.add(line.clone())?;
+                    self.history.add(&line)?;
 
                     if let Err(e) = self.editor.add_history_entry(line.as_str()) {
                         if !self.flags.is_set("quiet") {

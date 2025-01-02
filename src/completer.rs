@@ -1,11 +1,15 @@
 use rustyline::completion::{Completer, Pair};
-use rustyline::Context;
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::validate::Validator;
+use rustyline::{Context, Helper};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[derive(Clone)]
 pub struct ShellCompleter {
     commands: BTreeMap<Cow<'static, str>, ()>,
     aliases: BTreeMap<Cow<'static, str>, Cow<'static, str>>,
@@ -53,30 +57,32 @@ impl ShellCompleter {
     }
 
     pub fn update_aliases(&mut self, aliases: BTreeMap<Cow<'_, str>, Cow<'_, str>>) {
-        self.aliases = aliases.into_iter()
+        self.aliases = aliases
+            .into_iter()
             .map(|(k, v)| (Cow::Owned(k.into_owned()), Cow::Owned(v.into_owned())))
             .collect();
     }
 
     fn complete_command(&self, line: &str) -> Vec<Pair> {
         let mut matches = Vec::new();
+        let input = line.trim();
 
         // Complete commands
         for cmd in self.commands.keys() {
-            if cmd.starts_with(line) {
+            if cmd.starts_with(input) {
                 matches.push(Pair {
                     display: cmd.to_string(),
-                    replacement: cmd.to_string(),
+                    replacement: cmd.to_string(),  // Don't add space here
                 });
             }
         }
 
         // Complete aliases
         for alias in self.aliases.keys() {
-            if alias.starts_with(line) {
+            if alias.starts_with(input) {
                 matches.push(Pair {
                     display: format!("{} (alias)", alias),
-                    replacement: alias.to_string(),
+                    replacement: alias.to_string(),  // Don't add space here
                 });
             }
         }
@@ -88,37 +94,87 @@ impl ShellCompleter {
         let mut matches = Vec::new();
         let path = Path::new(incomplete);
 
-        let (dir_to_search, file_prefix) = if let Some(parent) = path.parent() {
+        // Handle absolute paths and current directory
+        let (dir_to_search, file_prefix) = if incomplete.is_empty() {
+            (PathBuf::from("."), "")
+        } else if incomplete.ends_with('/') {
+            // If path ends with /, search inside that directory
+            (PathBuf::from(incomplete), "")
+        } else if let Some(parent) = path.parent() {
             (
-                parent.to_path_buf(),
+                if parent.as_os_str().is_empty() {
+                    PathBuf::from(".")
+                } else {
+                    parent.to_path_buf()
+                },
                 path.file_name().and_then(|s| s.to_str()).unwrap_or(""),
             )
         } else {
             (PathBuf::from("."), incomplete)
         };
 
-        if let Ok(entries) = fs::read_dir(dir_to_search) {
+        // Handle absolute paths starting with /
+        let is_absolute = incomplete.starts_with('/');
+        let base_path = if is_absolute {
+            PathBuf::from("/")
+        } else {
+            PathBuf::new()
+        };
+
+        // Read directory entries
+        if let Ok(entries) = fs::read_dir(&dir_to_search) {
             for entry in entries.filter_map(Result::ok) {
                 if let Some(name) = entry.file_name().to_str() {
                     if name.starts_with(file_prefix) {
-                        let full_path = entry.path();
-                        let display_name = if full_path.is_dir() {
-                            format!("{}/", name)
-                        } else {
+                        let path = entry.path();
+                        let is_dir = path.is_dir();
+                        
+                        // Create the relative or absolute path for display and replacement
+                        let relative_path = if dir_to_search == PathBuf::from(".") {
                             name.to_string()
+                        } else {
+                            let mut full_path = if is_absolute {
+                                base_path.join(&dir_to_search)
+                            } else {
+                                dir_to_search.clone()
+                            };
+                            full_path.push(name);
+                            full_path.to_string_lossy().into_owned()
                         };
+
+                        // Create the display and replacement strings
+                        let (display, replacement) = if is_dir {
+                            (
+                                format!("{}/", relative_path),
+                                format!("{}/", relative_path)
+                            )
+                        } else {
+                            (
+                                relative_path.clone(),
+                                format!("{} ", relative_path)
+                            )
+                        };
+
                         matches.push(Pair {
-                            display: display_name,
-                            replacement: full_path.to_string_lossy().to_string(),
+                            display,
+                            replacement,
                         });
                     }
                 }
             }
         }
 
+        matches.sort_by(|a, b| a.display.cmp(&b.display));
         matches
     }
 }
+
+impl Helper for ShellCompleter {}
+impl Highlighter for ShellCompleter {}
+impl Hinter for ShellCompleter {
+    type Hint = String;
+}
+impl Validator for ShellCompleter {}
 
 impl Completer for ShellCompleter {
     type Candidate = Pair;
@@ -129,26 +185,33 @@ impl Completer for ShellCompleter {
         pos: usize,
         _ctx: &Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Pair>)> {
+        // Get the text up to the cursor position
         let line_up_to_cursor = &line[..pos];
-        let words: Vec<&str> = line_up_to_cursor.split_whitespace().collect();
+        
+        // Split into words and get the word being completed
+        let mut words: Vec<&str> = line_up_to_cursor.split_whitespace().collect();
+        
+        // If the line ends with a space, add an empty word
+        if line_up_to_cursor.ends_with(' ') {
+            words.push("");
+        }
 
-        let matches = if words.is_empty() {
-            Vec::new()
-        } else if words.len() == 1 {
-            // Completing command name
-            self.complete_command(words[0])
-        } else {
-            // Completing arguments (path completion)
-            let current_word = words.last().unwrap();
-            self.complete_path(current_word)
-        };
-
-        let start = if let Some(last_word) = words.last() {
-            pos - last_word.len()
-        } else {
-            0
-        };
-
-        Ok((start, matches))
+        match words.len() {
+            0 => Ok((0, self.complete_command(""))),
+            1 => {
+                let word = words[0];
+                let start = line_up_to_cursor.rfind(word).unwrap_or(0);
+                Ok((start, self.complete_command(word)))
+            },
+            _ => {
+                let last_word = words.last().unwrap_or(&"");
+                let start = if last_word.is_empty() {
+                    pos
+                } else {
+                    line_up_to_cursor.rfind(last_word).unwrap_or(pos)
+                };
+                Ok((start, self.complete_path(last_word)))
+            }
+        }
     }
 }
