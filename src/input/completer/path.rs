@@ -3,32 +3,47 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::path::PathExpander;
+
 use rustyline::completion::Pair;
-
-
 #[derive(Clone)]
-pub struct PathCompleter;
+pub struct PathCompleter {
+    path_expander: PathExpander,
+}
 
 impl PathCompleter {
     pub fn new() -> Self {
-        Self
+        Self {
+            path_expander: PathExpander::new(),
+        }
     }
 
     pub fn complete_path(&self, incomplete: &str) -> Vec<Pair> {
         let (dir_to_search, file_prefix, is_absolute) = self.parse_path_input(incomplete);
-        let base_path = if is_absolute { PathBuf::from("/") } else { PathBuf::new() };
+        let base_path = if is_absolute { 
+            PathBuf::from("/") 
+        } else if self.path_expander.is_home_path(incomplete) {
+            self.path_expander.get_home_dir().unwrap_or_default()
+        } else { 
+            PathBuf::new() 
+        };
         
         self.get_path_matches(&dir_to_search, file_prefix, is_absolute, base_path)
     }
 
     fn parse_path_input(&self, incomplete: &str) -> (PathBuf, String, bool) {
-        let path = Path::new(incomplete);
         let is_absolute = incomplete.starts_with('/');
+        
+        let path = if let Ok(expanded) = self.path_expander.expand(incomplete) {
+            expanded
+        } else {
+            PathBuf::from(incomplete)
+        };
 
         let (dir_to_search, file_prefix) = if incomplete.is_empty() {
             (PathBuf::from("."), String::new())
         } else if incomplete.ends_with('/') {
-            (PathBuf::from(incomplete), String::new())
+            (path, String::new())
         } else if let Some(parent) = path.parent() {
             (
                 if parent.as_os_str().is_empty() {
@@ -56,15 +71,20 @@ impl PathCompleter {
         base_path: PathBuf,
     ) -> Vec<Pair> {
         let mut matches = Vec::new();
+        let search_dir = if dir_to_search == Path::new("~") {
+            dirs::home_dir().unwrap_or_else(|| dir_to_search.to_path_buf())
+        } else {
+            dir_to_search.to_path_buf()
+        };
 
-        if let Ok(entries) = fs::read_dir(dir_to_search) {
+        if let Ok(entries) = fs::read_dir(&search_dir) {
             for entry in entries.filter_map(Result::ok) {
                 if let Some(name) = entry.file_name().to_str() {
                     if name.starts_with(&file_prefix) {
                         if let Some(pair) = self.create_completion_pair(
                             name,
                             &entry.path(),
-                            dir_to_search,
+                            &search_dir,
                             is_absolute,
                             &base_path,
                         ) {
@@ -94,11 +114,21 @@ impl PathCompleter {
         } else {
             let mut full_path = if is_absolute {
                 base_path.join(dir_to_search)
+            } else if dir_to_search.starts_with("~") {
+                if let Some(home) = dirs::home_dir() {
+                    home.join(name)
+                } else {
+                    dir_to_search.join(name)
+                }
             } else {
-                dir_to_search.to_path_buf()
+                dir_to_search.join(name)
             };
-            full_path.push(name);
-            full_path.to_string_lossy().into_owned()
+
+            if let Ok(canonical) = full_path.canonicalize() {
+                canonical.to_string_lossy().into_owned()
+            } else {
+                full_path.to_string_lossy().into_owned()
+            }
         };
 
         let (display, replacement) = if is_dir {
