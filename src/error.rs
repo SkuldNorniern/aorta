@@ -1,3 +1,6 @@
+use crate::process::ProcessError;
+
+
 #[derive(Debug)]
 pub enum ShellError {
     Readline(rustyline::error::ReadlineError),
@@ -5,6 +8,7 @@ pub enum ShellError {
     HomeDirNotFound,
     InvalidShellPath,
     CommandNotFound(String),
+    ProcessError(ProcessError),
     ConfigError(String, String),
     FlagError(String),
     CtrlC(String),
@@ -28,6 +32,12 @@ impl From<ctrlc::Error> for ShellError {
     }
 }
 
+impl From<ProcessError> for ShellError {
+    fn from(err: ProcessError) -> Self {
+        ShellError::ProcessError(err)
+    }
+}
+
 impl std::fmt::Display for ShellError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -39,6 +49,7 @@ impl std::fmt::Display for ShellError {
             ShellError::ConfigError(path, msg) => write!(f, "Config error in {}: {}", path, msg),
             ShellError::FlagError(msg) => write!(f, "Flag error: {}", msg),
             ShellError::CtrlC(msg) => write!(f, "Ctrl-C error: {}", msg),
+            ShellError::ProcessError(e) => write!(f, "Process error: {}", e),
         }
     }
 }

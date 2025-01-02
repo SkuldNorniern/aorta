@@ -3,10 +3,10 @@ use crate::config::Config;
 use crate::error::ShellError;
 use crate::flags::Flags;
 use crate::history::History;
+use crate::process::executor::CommandExecutor;
 use rustyline::DefaultEditor;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 pub struct Shell {
     editor: DefaultEditor,
@@ -15,6 +15,7 @@ pub struct Shell {
     completer: ShellCompleter,
     history: History,
     flags: Flags,
+    executor: CommandExecutor,
 }
 
 impl Shell {
@@ -28,23 +29,21 @@ impl Shell {
 
         // After loading config, update the current process environment
         if let Some(path) = env::var_os("PATH") {
-            env::set_var("PATH", path); // Refresh PATH in current process
+            env::set_var("PATH", path);
         }
 
         let completer = ShellCompleter::new();
 
-        // Setup history with default values
         let history_file = dirs::home_dir()
             .ok_or(ShellError::HomeDirNotFound)?
             .join(".aorta_history");
         let history = History::new(history_file, 1000)?;
 
-        // Set up initial CTRL-C handler
-        // let _r = running.clone();
         ctrlc::set_handler(move || {
-            // Do nothing - this prevents the shell from exiting
             println!("\nUse 'exit' to exit the shell");
         })?;
+
+        let executor = CommandExecutor::new(&flags)?;
 
         Ok(Shell {
             editor,
@@ -53,6 +52,7 @@ impl Shell {
             completer,
             history,
             flags,
+            executor,
         })
     }
 
@@ -122,10 +122,7 @@ impl Shell {
     fn execute_command(&mut self, command: &str) -> Result<(), ShellError> {
         // Expand aliases before processing the command
         let expanded_command = self.config.expand_aliases(command);
-
-        // Expand environment variables
         let expanded_command = self.expand_env_vars(&expanded_command);
-
         let args: Vec<&str> = expanded_command.split_whitespace().collect();
 
         if args.is_empty() {
@@ -135,7 +132,7 @@ impl Shell {
         match args[0] {
             "cd" => self.change_directory(args.get(1).copied())?,
             "exit" => std::process::exit(0),
-            _ => self.spawn_process(&args)?,
+            _ => self.executor.spawn_process(&args)?,
         }
         Ok(())
     }
@@ -180,60 +177,4 @@ impl Shell {
         self.current_dir = env::current_dir()?.to_string_lossy().to_string();
         Ok(())
     }
-
-    fn spawn_process(&self, args: &[&str]) -> Result<(), ShellError> {
-        let child = Command::new(args[0])
-            .args(&args[1..])
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .env_clear()
-            .envs(env::vars())
-            .spawn();
-
-        // Handle the spawn result first
-        let mut child = match child {
-            Ok(child) => child,
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    eprintln!("aorta: command not found: {}", args[0]);
-                    return Ok(()); // Return early with Ok to avoid showing additional error messages
-                }
-                return Err(e.into());
-            }
-        };
-
-        // Store the child's pid
-        let _pid = child.id();
-
-        // Set up signal handling using a different approach
-        unsafe {
-            // Install a signal handler for SIGINT
-            libc::signal(libc::SIGINT, handle_sigint as libc::sighandler_t);
-        }
-
-        // Wait for the child process to complete
-        
-
-        match child.wait() {
-            Ok(status) => {
-                if !status.success() {
-                    println!("Process exited with status: {}", status);
-                }
-                Ok(())
-            }
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    Err(ShellError::CommandNotFound(args[0].to_string()))
-                } else {
-                    Err(e.into())
-                }
-            }
-        }
-    }
-}
-
-// External signal handler
-extern "C" fn handle_sigint(_: i32) {
-    // Do nothing, let the child process handle the signal
 }
