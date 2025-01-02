@@ -1,9 +1,4 @@
-use std::{
-    borrow::Cow,
-    collections::BTreeMap,
-    env,
-    fs,
-};
+use std::{borrow::Cow, collections::BTreeMap, env, fs};
 
 use rustyline::completion::Pair;
 
@@ -90,4 +85,4 @@ impl CommandCompleter {
             }
         }
     }
-} 
+}

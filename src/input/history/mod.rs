@@ -1,13 +1,9 @@
 mod file_ops;
 
-use std::{
-    borrow::Cow,
-    collections::BTreeSet,
-    path::PathBuf,
-};
+use std::{borrow::Cow, collections::BTreeSet, path::PathBuf};
 
-use crate::error::ShellError;
 use self::file_ops::FileOps;
+use crate::error::ShellError;
 
 pub struct History {
     entries: BTreeSet<Cow<'static, str>>,
@@ -35,7 +31,7 @@ impl History {
         self.entries.insert(Cow::Owned(entry.to_owned()));
         self.trim_entries();
         self.file_ops.append_entry(entry)?;
-        
+
         Ok(())
     }
 
@@ -54,4 +50,4 @@ impl History {
             }
         }
     }
-} 
+}

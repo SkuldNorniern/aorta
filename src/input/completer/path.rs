@@ -20,20 +20,20 @@ impl PathCompleter {
 
     pub fn complete_path(&self, incomplete: &str) -> Vec<Pair> {
         let (dir_to_search, file_prefix, is_absolute) = self.parse_path_input(incomplete);
-        let base_path = if is_absolute { 
-            PathBuf::from("/") 
+        let base_path = if is_absolute {
+            PathBuf::from("/")
         } else if self.path_expander.is_home_path(incomplete) {
             self.path_expander.get_home_dir().unwrap_or_default()
-        } else { 
-            PathBuf::new() 
+        } else {
+            PathBuf::new()
         };
-        
+
         self.get_path_matches(&dir_to_search, file_prefix, is_absolute, base_path)
     }
 
     fn parse_path_input(&self, incomplete: &str) -> (PathBuf, String, bool) {
         let is_absolute = incomplete.starts_with('/');
-        
+
         let path = if let Ok(expanded) = self.path_expander.expand(incomplete) {
             expanded
         } else {
@@ -108,11 +108,11 @@ impl PathCompleter {
         base_path: &Path,
     ) -> Option<Pair> {
         let is_dir = path.is_dir();
-        
+
         let relative_path = if dir_to_search == Path::new(".") {
             name.to_string()
         } else {
-            let mut full_path = if is_absolute {
+            let full_path = if is_absolute {
                 base_path.join(dir_to_search)
             } else if dir_to_search.starts_with("~") {
                 if let Some(home) = dirs::home_dir() {
@@ -132,17 +132,14 @@ impl PathCompleter {
         };
 
         let (display, replacement) = if is_dir {
-            (
-                format!("{}/", relative_path),
-                format!("{}/", relative_path),
-            )
+            (format!("{}/", relative_path), format!("{}/", relative_path))
         } else {
-            (
-                relative_path.clone(),
-                format!("{} ", relative_path),
-            )
+            (relative_path.clone(), format!("{} ", relative_path))
         };
 
-        Some(Pair { display, replacement })
+        Some(Pair {
+            display,
+            replacement,
+        })
     }
-} 
+}

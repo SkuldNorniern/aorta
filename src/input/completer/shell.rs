@@ -1,12 +1,6 @@
-use std::{
-    borrow::Cow,
-    collections::BTreeMap,
-};
+use std::{borrow::Cow, collections::BTreeMap};
 
-use super::{
-    command::CommandCompleter,
-    path::PathCompleter,
-};
+use super::{command::CommandCompleter, path::PathCompleter};
 
 use rustyline::{
     completion::{Completer, Pair},
@@ -15,8 +9,6 @@ use rustyline::{
     validate::Validator,
     Context, Helper,
 };
-
-
 
 #[derive(Clone)]
 pub struct ShellCompleter {
@@ -88,4 +80,4 @@ impl Completer for ShellCompleter {
             }
         }
     }
-} 
+}
