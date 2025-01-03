@@ -44,13 +44,13 @@ impl PathCompleter {
                 .and_then(|s| s.to_str())
                 .unwrap_or("")
                 .to_string();
-            
+
             let dir = if parent.as_os_str().is_empty() {
                 PathBuf::from(".")
             } else {
                 parent.to_path_buf()
             };
-            
+
             (dir, prefix, is_tilde)
         } else {
             (PathBuf::from("."), incomplete.to_string(), is_tilde)
@@ -119,7 +119,8 @@ impl PathCompleter {
         };
 
         // Keep the original path style (relative/absolute)
-        let display_path = if original_input.starts_with("./") || original_input.starts_with("../") {
+        let display_path = if original_input.starts_with("./") || original_input.starts_with("../")
+        {
             relative_path
         } else {
             relative_path

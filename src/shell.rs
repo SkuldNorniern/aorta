@@ -29,7 +29,7 @@ impl Shell {
         editor.set_auto_add_history(true);
 
         let current_dir = env::current_dir()?.to_string_lossy().to_string();
-        let config = Config::new()?;
+        let _config = Config::new()?;
 
         // Load config before setting up other components
         let executor = CommandExecutor::new(&flags)?;

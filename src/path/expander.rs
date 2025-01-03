@@ -25,14 +25,14 @@ impl PathExpander {
 
     fn expand_tilde(&self, path: &str) -> Result<PathBuf, ShellError> {
         let home_dir = dirs::home_dir().ok_or(ShellError::HomeDirNotFound)?;
-        
+
         match path {
             "~" => Ok(home_dir),
             path if path.starts_with("~/") => {
                 let remainder = &path[2..]; // Skip "~/"
                 Ok(home_dir.join(remainder))
             }
-            _ => Ok(Path::new(path).to_path_buf()) // For other cases like ~user
+            _ => Ok(Path::new(path).to_path_buf()), // For other cases like ~user
         }
     }
 
@@ -82,9 +82,6 @@ mod tests {
         );
 
         // Test relative path
-        assert_eq!(
-            expander.expand("./test").unwrap(),
-            PathBuf::from("./test")
-        );
+        assert_eq!(expander.expand("./test").unwrap(), PathBuf::from("./test"));
     }
 }
