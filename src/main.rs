@@ -18,8 +18,8 @@ fn main() -> Result<(), aorta::error::ShellError> {
     }
 
     if !flags.is_set("quiet") {
-        println!("Welcome to Aorta Shell!");
-        println!("Type 'exit' to quit.");
+        // FEAT: TODO: Add Support of useing .motd or .aorta_motd to display a message
+        // | or maybe use a .config/aorta/aorta.toml and direct the motd file to display a message
     }
 
     let mut shell = Shell::new(flags)?;
