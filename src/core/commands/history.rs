@@ -77,7 +77,7 @@ impl HistoryCommand {
             } => {
                 let time = format_timestamp(*timestamp);
                 format!(
-                    "{} [{:?}] ({}) {} [{}ms]",
+                    "{} [{}] ({}) {} [{}ms]",
                     time,
                     if *exit_code == 0 { "✓" } else { "✗" },
                     exit_code,
