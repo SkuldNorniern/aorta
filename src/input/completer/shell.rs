@@ -62,12 +62,12 @@ impl Completer for ShellCompleter {
             words.push("");
         }
 
-        match words.len() {
-            0 => Ok((0, self.command_completer.complete_command(""))),
+        let (start, matches) = match words.len() {
+            0 => (0, self.command_completer.complete_command("")),
             1 => {
                 let word = words[0];
                 let start = line_up_to_cursor.rfind(word).unwrap_or(0);
-                Ok((start, self.command_completer.complete_command(word)))
+                (start, self.command_completer.complete_command(word))
             }
             _ => {
                 let last_word = words.last().unwrap_or(&"");
@@ -76,8 +76,10 @@ impl Completer for ShellCompleter {
                 } else {
                     line_up_to_cursor.rfind(last_word).unwrap_or(pos)
                 };
-                Ok((start, self.path_completer.complete_path(last_word)))
+                (start, self.path_completer.complete_path(last_word))
             }
-        }
+        };
+
+        Ok((start, matches))
     }
 }

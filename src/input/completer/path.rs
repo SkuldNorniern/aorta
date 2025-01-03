@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::path::PathExpander;
-
 use rustyline::completion::Pair;
+
 #[derive(Clone)]
 pub struct PathCompleter {
     path_expander: PathExpander,
@@ -19,60 +19,56 @@ impl PathCompleter {
     }
 
     pub fn complete_path(&self, incomplete: &str) -> Vec<Pair> {
-        let (dir_to_search, file_prefix, is_absolute) = self.parse_path_input(incomplete);
-        let base_path = if is_absolute {
-            PathBuf::from("/")
-        } else if self.path_expander.is_home_path(incomplete) {
-            self.path_expander.get_home_dir().unwrap_or_default()
-        } else {
-            PathBuf::new()
-        };
-
-        self.get_path_matches(&dir_to_search, file_prefix, is_absolute, base_path)
+        let (dir_to_search, file_prefix, is_tilde) = self.parse_path_input(incomplete);
+        self.get_path_matches(&dir_to_search, &file_prefix, is_tilde, incomplete)
     }
 
     fn parse_path_input(&self, incomplete: &str) -> (PathBuf, String, bool) {
-        let is_absolute = incomplete.starts_with('/');
+        let is_tilde = incomplete.starts_with('~');
+        let path = PathBuf::from(incomplete);
 
-        let path = if let Ok(expanded) = self.path_expander.expand(incomplete) {
-            expanded
+        // Handle empty input
+        if incomplete.is_empty() {
+            return (PathBuf::from("."), String::new(), false);
+        }
+
+        // Handle directory completion (ends with /)
+        if incomplete.ends_with('/') {
+            return (path, String::new(), is_tilde);
+        }
+
+        // Get parent directory and file prefix
+        if let Some(parent) = path.parent() {
+            let prefix = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            
+            let dir = if parent.as_os_str().is_empty() {
+                PathBuf::from(".")
+            } else {
+                parent.to_path_buf()
+            };
+            
+            (dir, prefix, is_tilde)
         } else {
-            PathBuf::from(incomplete)
-        };
-
-        let (dir_to_search, file_prefix) = if incomplete.is_empty() {
-            (PathBuf::from("."), String::new())
-        } else if incomplete.ends_with('/') {
-            (path, String::new())
-        } else if let Some(parent) = path.parent() {
-            (
-                if parent.as_os_str().is_empty() {
-                    PathBuf::from(".")
-                } else {
-                    parent.to_path_buf()
-                },
-                path.file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_string(),
-            )
-        } else {
-            (PathBuf::from("."), incomplete.to_string())
-        };
-
-        (dir_to_search, file_prefix, is_absolute)
+            (PathBuf::from("."), incomplete.to_string(), is_tilde)
+        }
     }
 
     fn get_path_matches(
         &self,
         dir_to_search: &Path,
-        file_prefix: String,
-        is_absolute: bool,
-        base_path: PathBuf,
+        file_prefix: &str,
+        is_tilde: bool,
+        original_input: &str,
     ) -> Vec<Pair> {
         let mut matches = Vec::new();
-        let search_dir = if dir_to_search == Path::new("~") {
-            dirs::home_dir().unwrap_or_else(|| dir_to_search.to_path_buf())
+        let search_dir = if is_tilde {
+            self.path_expander
+                .expand(dir_to_search.to_str().unwrap_or(""))
+                .unwrap_or_else(|_| dir_to_search.to_path_buf())
         } else {
             dir_to_search.to_path_buf()
         };
@@ -80,13 +76,13 @@ impl PathCompleter {
         if let Ok(entries) = fs::read_dir(&search_dir) {
             for entry in entries.filter_map(Result::ok) {
                 if let Some(name) = entry.file_name().to_str() {
-                    if name.starts_with(&file_prefix) {
+                    if name.starts_with(file_prefix) {
                         if let Some(pair) = self.create_completion_pair(
                             name,
                             &entry.path(),
-                            &search_dir,
-                            is_absolute,
-                            &base_path,
+                            dir_to_search,
+                            is_tilde,
+                            original_input,
                         ) {
                             matches.push(pair);
                         }
@@ -104,37 +100,35 @@ impl PathCompleter {
         name: &str,
         path: &Path,
         dir_to_search: &Path,
-        is_absolute: bool,
-        base_path: &Path,
+        is_tilde: bool,
+        original_input: &str,
     ) -> Option<Pair> {
         let is_dir = path.is_dir();
 
-        let relative_path = if dir_to_search == Path::new(".") {
+        // Preserve the tilde in the path if it was used
+        let relative_path = if is_tilde {
+            let without_tilde = dir_to_search
+                .strip_prefix("~")
+                .unwrap_or(dir_to_search)
+                .join(name);
+            format!("~/{}", without_tilde.display())
+        } else if dir_to_search == Path::new(".") {
             name.to_string()
         } else {
-            let full_path = if is_absolute {
-                base_path.join(dir_to_search)
-            } else if dir_to_search.starts_with("~") {
-                if let Some(home) = dirs::home_dir() {
-                    home.join(name)
-                } else {
-                    dir_to_search.join(name)
-                }
-            } else {
-                dir_to_search.join(name)
-            };
+            dir_to_search.join(name).to_string_lossy().into_owned()
+        };
 
-            if let Ok(canonical) = full_path.canonicalize() {
-                canonical.to_string_lossy().into_owned()
-            } else {
-                full_path.to_string_lossy().into_owned()
-            }
+        // Keep the original path style (relative/absolute)
+        let display_path = if original_input.starts_with("./") || original_input.starts_with("../") {
+            relative_path
+        } else {
+            relative_path
         };
 
         let (display, replacement) = if is_dir {
-            (format!("{}/", relative_path), format!("{}/", relative_path))
+            (format!("{}/", display_path), format!("{}/", display_path))
         } else {
-            (relative_path.clone(), format!("{} ", relative_path))
+            (display_path.clone(), format!("{} ", display_path))
         };
 
         Some(Pair {
