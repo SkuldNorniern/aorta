@@ -48,8 +48,7 @@ impl PathExpander {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
-
+    
     #[test]
     fn test_expand_tilde() {
         let expander = PathExpander::new();

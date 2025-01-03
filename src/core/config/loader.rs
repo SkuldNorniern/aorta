@@ -1,4 +1,4 @@
-use std::{fs, io::BufRead, path::Path};
+use std::{fs, path::Path, path::PathBuf};
 
 use super::{Config, ConfigError, ConfigPaths};
 
@@ -104,88 +104,81 @@ impl<'a> ConfigLoader<'a> {
         Ok(())
     }
 
-    fn process_conditional(&self, line: &str, config: &mut Config) -> Result<(), ConfigError> {
-        // Skip the "if " prefix
-        let condition = line.trim_start_matches("if ").trim();
-
-        // Basic condition evaluation
-        let condition_met = match condition {
-            // Check if variable is set and non-empty
+    fn evaluate_condition(&self, condition: &str, config: &Config) -> Result<bool, ConfigError> {
+        match condition {
             s if s.starts_with("[ -n ") => {
-                let var_name = s
-                    .trim_start_matches("[ -n ")
-                    .trim_end_matches(" ]")
-                    .trim_matches('"')
-                    .trim_matches('$');
-                std::env::var(var_name).is_ok()
+                let var_name = self.extract_var_name(s, "[ -n ");
+                Ok(std::env::var(var_name).is_ok())
             }
-            // Check if variable is empty or unset
             s if s.starts_with("[ -z ") => {
-                let var_name = s
-                    .trim_start_matches("[ -z ")
-                    .trim_end_matches(" ]")
-                    .trim_matches('"')
-                    .trim_matches('$');
-                std::env::var(var_name).is_err()
+                let var_name = self.extract_var_name(s, "[ -z ");
+                Ok(std::env::var(var_name).is_err())
             }
-            // Check if file exists
             s if s.starts_with("[ -f ") => {
-                let path = s
-                    .trim_start_matches("[ -f ")
-                    .trim_end_matches(" ]")
-                    .trim_matches('"');
-                let expanded_path = config.env_vars.expand_value(path);
-                std::path::Path::new(expanded_path.as_ref()).is_file()
+                let path = self.extract_path(s, "[ -f ", config)?;
+                Ok(path.is_file())
             }
-            // Check if directory exists
             s if s.starts_with("[ -d ") => {
-                let path = s
-                    .trim_start_matches("[ -d ")
-                    .trim_end_matches(" ]")
-                    .trim_matches('"');
-                let expanded_path = config.env_vars.expand_value(path);
-                std::path::Path::new(expanded_path.as_ref()).is_dir()
+                let path = self.extract_path(s, "[ -d ", config)?;
+                Ok(path.is_dir())
             }
-            // Simple equality check
-            s if s.contains("=") => {
-                let parts: Vec<&str> = s
-                    .trim_start_matches("[ ")
-                    .trim_end_matches(" ]")
-                    .split('=')
-                    .map(|s| s.trim_matches('"').trim())
-                    .collect();
-                if parts.len() == 2 {
-                    let left = config.env_vars.expand_value(parts[0]);
-                    let right = config.env_vars.expand_value(parts[1]);
-                    left == right
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        };
+            s if s.contains("=") => Ok(self.check_equality(s, config)),
+            _ => Ok(false),
+        }
+    }
 
+    fn extract_var_name(&self, s: &str, prefix: &str) -> String {
+        s.trim_start_matches(prefix)
+            .trim_end_matches(" ]")
+            .trim_matches('"')
+            .trim_matches('$')
+            .to_string()
+    }
+
+    fn extract_path(&self, s: &str, prefix: &str, config: &Config) -> Result<PathBuf, ConfigError> {
+        let path = s.trim_start_matches(prefix)
+            .trim_end_matches(" ]")
+            .trim_matches('"');
+        let expanded_path = config.env_vars.expand_value(path);
+        Ok(PathBuf::from(expanded_path.as_ref()))
+    }
+
+    fn check_equality(&self, s: &str, config: &Config) -> bool {
+        let parts: Vec<&str> = s
+            .trim_start_matches("[ ")
+            .trim_end_matches(" ]")
+            .split('=')
+            .map(|s| s.trim_matches('"').trim())
+            .collect();
+
+        if parts.len() == 2 {
+            let left = config.env_vars.expand_value(parts[0]);
+            let right = config.env_vars.expand_value(parts[1]);
+            left == right
+        } else {
+            false
+        }
+    }
+
+    fn process_conditional(&self, line: &str, config: &mut Config) -> Result<(), ConfigError> {
+        let condition = line.trim_start_matches("if ").trim();
+        let condition_met = self.evaluate_condition(condition, config)?;
+        self.process_conditional_block(line, condition_met, config)
+    }
+
+    fn process_conditional_block(&self, line: &str, condition_met: bool, config: &mut Config) -> Result<(), ConfigError> {
         let mut in_then_block = false;
         let mut skip_until_fi = !condition_met;
 
-        // Read the content to process the entire if block
         let content = fs::read_to_string(&config.paths.rc_path)?;
         let mut lines = content.lines().skip_while(|l| l.trim() != line);
-
-        // Skip the 'if' line since we already processed it
-        let _ = lines.next();
+        let _ = lines.next(); // Skip the 'if' line
 
         for current_line in lines {
             let current_line = current_line.trim();
             match current_line {
-                "then" => {
-                    in_then_block = true;
-                    continue;
-                }
-                "else" => {
-                    skip_until_fi = !skip_until_fi;
-                    continue;
-                }
+                "then" => in_then_block = true,
+                "else" => skip_until_fi = !skip_until_fi,
                 "fi" => break,
                 _ if in_then_block && !skip_until_fi => {
                     self.process_line(current_line, config)?;

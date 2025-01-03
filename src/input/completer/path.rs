@@ -20,7 +20,7 @@ impl PathCompleter {
 
     pub fn complete_path(&self, incomplete: &str) -> Vec<Pair> {
         let (dir_to_search, file_prefix, is_tilde) = self.parse_path_input(incomplete);
-        self.get_path_matches(&dir_to_search, &file_prefix, is_tilde, incomplete)
+        self.get_path_matches(&dir_to_search, &file_prefix, is_tilde)
     }
 
     fn parse_path_input(&self, incomplete: &str) -> (PathBuf, String, bool) {
@@ -62,7 +62,6 @@ impl PathCompleter {
         dir_to_search: &Path,
         file_prefix: &str,
         is_tilde: bool,
-        original_input: &str,
     ) -> Vec<Pair> {
         let mut matches = Vec::new();
         let search_dir = if is_tilde {
@@ -82,7 +81,6 @@ impl PathCompleter {
                             &entry.path(),
                             dir_to_search,
                             is_tilde,
-                            original_input,
                         ) {
                             matches.push(pair);
                         }
@@ -101,7 +99,6 @@ impl PathCompleter {
         path: &Path,
         dir_to_search: &Path,
         is_tilde: bool,
-        original_input: &str,
     ) -> Option<Pair> {
         let is_dir = path.is_dir();
 
@@ -119,12 +116,7 @@ impl PathCompleter {
         };
 
         // Keep the original path style (relative/absolute)
-        let display_path = if original_input.starts_with("./") || original_input.starts_with("../")
-        {
-            relative_path
-        } else {
-            relative_path
-        };
+        let display_path = relative_path;
 
         let (display, replacement) = if is_dir {
             (format!("{}/", display_path), format!("{}/", display_path))

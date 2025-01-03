@@ -5,7 +5,7 @@ mod env_vars;
 mod loader;
 mod paths;
 
-use super::commands::{Command, CommandError, CommandExecutor};
+use super::commands::{ CommandError, CommandExecutor};
 use aliases::AliasManager;
 use env_vars::EnvVarManager;
 use loader::ConfigLoader;
@@ -52,9 +52,7 @@ impl Config {
         let args = &parts[1..];
 
         if let Some(executor) = &self.executor {
-            executor
-                .execute(command, args)
-                .map_err(ConfigError::CommandError)?;
+            executor.execute(command, args).map_err(ConfigError::CommandError)?;
         }
 
         Ok(())
@@ -105,9 +103,7 @@ impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConfigError::HomeDirNotFound => write!(f, "Home directory not found"),
-            ConfigError::EnvVarNotFound(var) => {
-                write!(f, "Environment variable not found: {}", var)
-            }
+            ConfigError::EnvVarNotFound(var) => write!(f, "Environment variable not found: {}", var),
             ConfigError::ConfigFileNotFound(path) => write!(f, "Config file not found: {}", path),
             ConfigError::IoError(e) => write!(f, "IO error: {}", e),
             ConfigError::CommandError(e) => write!(f, "Command error: {}", e),
