@@ -24,24 +24,15 @@ impl PathExpander {
     }
 
     fn expand_tilde(&self, path: &str) -> Result<PathBuf, ShellError> {
-        if path.len() == 1 {
-            // Just "~"
-            dirs::home_dir().ok_or(ShellError::HomeDirNotFound)
-        } else {
-            let without_tilde = &path[1..];
-            if let Some(stripped) = without_tilde.strip_prefix('/') {
-                // "~/path"
-                let mut home_path = dirs::home_dir().ok_or(ShellError::HomeDirNotFound)?;
-                for part in stripped.split('/') {
-                    if !part.is_empty() {
-                        home_path.push(part);
-                    }
-                }
-                Ok(home_path)
-            } else {
-                // "~username/path" - not handling this case for now
-                Ok(Path::new(path).to_path_buf())
+        let home_dir = dirs::home_dir().ok_or(ShellError::HomeDirNotFound)?;
+        
+        match path {
+            "~" => Ok(home_dir),
+            path if path.starts_with("~/") => {
+                let remainder = &path[2..]; // Skip "~/"
+                Ok(home_dir.join(remainder))
             }
+            _ => Ok(Path::new(path).to_path_buf()) // For other cases like ~user
         }
     }
 
@@ -51,5 +42,49 @@ impl PathExpander {
 
     pub fn get_home_dir(&self) -> Result<PathBuf, ShellError> {
         dirs::home_dir().ok_or(ShellError::HomeDirNotFound)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_expand_tilde() {
+        let expander = PathExpander::new();
+        let home = dirs::home_dir().unwrap();
+
+        // Test single tilde
+        assert_eq!(expander.expand("~").unwrap(), home);
+
+        // Test tilde with slash
+        assert_eq!(expander.expand("~/").unwrap(), home);
+
+        // Test tilde with path
+        assert_eq!(expander.expand("~/test").unwrap(), home.join("test"));
+
+        // Test tilde with nested path
+        assert_eq!(
+            expander.expand("~/test/nested").unwrap(),
+            home.join("test").join("nested")
+        );
+    }
+
+    #[test]
+    fn test_non_tilde_paths() {
+        let expander = PathExpander::new();
+
+        // Test absolute path
+        assert_eq!(
+            expander.expand("/usr/local").unwrap(),
+            PathBuf::from("/usr/local")
+        );
+
+        // Test relative path
+        assert_eq!(
+            expander.expand("./test").unwrap(),
+            PathBuf::from("./test")
+        );
     }
 }

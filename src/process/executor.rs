@@ -2,24 +2,40 @@ use std::env;
 use std::process::{Command, Stdio};
 
 use super::{signal, ProcessError};
-
 use crate::flags::Flags;
+use crate::path::PathExpander;
 
 #[derive(Clone)]
 pub struct CommandExecutor {
     quiet_mode: bool,
+    path_expander: PathExpander,
 }
 
 impl CommandExecutor {
     pub fn new(flags: &Flags) -> Result<Self, ProcessError> {
         Ok(CommandExecutor {
             quiet_mode: flags.is_set("quiet"),
+            path_expander: PathExpander::new(),
         })
     }
 
     pub fn spawn_process(&self, args: &[&str]) -> Result<(), ProcessError> {
-        let child = Command::new(args[0])
-            .args(&args[1..])
+        let expanded_args: Vec<String> = args
+            .iter()
+            .map(|&arg| {
+                if arg.contains('~') {
+                    self.path_expander
+                        .expand(arg)
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_else(|_| arg.to_owned())
+                } else {
+                    arg.to_owned()
+                }
+            })
+            .collect();
+
+        let child = Command::new(&expanded_args[0])
+            .args(&expanded_args[1..])
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
