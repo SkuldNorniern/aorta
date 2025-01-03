@@ -1,12 +1,12 @@
 use std::{
     borrow::Cow,
-    collections::BTreeSet,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::PathBuf,
 };
 
-use crate::error::ShellError;
+use super::types::HistoryEntry;
+use super::HistoryError;
 
 pub struct FileOps {
     file_path: PathBuf,
@@ -17,17 +17,46 @@ impl FileOps {
         Self { file_path }
     }
 
-    pub fn load_entries(&self) -> Result<BTreeSet<Cow<'static, str>>, ShellError> {
-        let mut entries = BTreeSet::new();
+    pub fn get_path(&self) -> &PathBuf {
+        &self.file_path
+    }
+
+    pub fn load_entries(&self) -> Result<Vec<HistoryEntry>, HistoryError> {
+        let mut entries = Vec::new();
 
         if self.file_path.exists() {
-            let file = File::open(&self.file_path)?;
+            let file = File::open(&self.file_path)
+                .map_err(|e| HistoryError::IoError(e))?;
             let reader = BufReader::new(file);
 
             for line in reader.lines() {
-                let line = line?;
+                let line = line.map_err(|e| HistoryError::IoError(e))?;
                 if !line.trim().is_empty() {
-                    entries.insert(Cow::Owned(line));
+                    let parts: Vec<&str> = line.split('|').collect();
+                    match parts.as_slice() {
+                        [command, timestamp, exit_code, duration] => {
+                            let timestamp = timestamp.parse()
+                                .map_err(|_| HistoryError::FileOperationError("Invalid timestamp".into()))?;
+                            let exit_code = exit_code.parse()
+                                .map_err(|_| HistoryError::FileOperationError("Invalid exit code".into()))?;
+                            let duration = duration.parse()
+                                .map_err(|_| HistoryError::FileOperationError("Invalid duration".into()))?;
+                            
+                            entries.push(HistoryEntry::Command {
+                                command: Cow::Owned(command.to_string()),
+                                timestamp,
+                                exit_code,
+                                duration,
+                            });
+                        }
+                        _ => {
+                            entries.push(HistoryEntry::new_command(
+                                line,
+                                0,
+                                0,
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -35,13 +64,24 @@ impl FileOps {
         Ok(entries)
     }
 
-    pub fn append_entry(&self, entry: &str) -> Result<(), ShellError> {
+    pub fn append_entry(&self, entry: &HistoryEntry) -> Result<(), HistoryError> {
         let mut file = OpenOptions::new()
-            .append(true)
             .create(true)
-            .open(&self.file_path)?;
+            .append(true)
+            .open(&self.file_path)
+            .map_err(|e| HistoryError::IoError(e))?;
 
-        writeln!(file, "{}", entry)?;
+        match entry {
+            HistoryEntry::Command { command, timestamp, exit_code, duration } => {
+                writeln!(file, "{}|{}|{}|{}", command, timestamp, exit_code, duration)
+                    .map_err(|e| HistoryError::IoError(e))?;
+            }
+            HistoryEntry::Event { description, timestamp } => {
+                writeln!(file, "{}|{}|0|0", description, timestamp)
+                    .map_err(|e| HistoryError::IoError(e))?;
+            }
+        }
+        
         Ok(())
     }
 }

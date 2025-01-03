@@ -70,9 +70,6 @@ impl Shell {
             let prompt = format!("{} > ", self.current_dir);
             match self.editor.readline(&prompt) {
                 Ok(line) => {
-                    // Add to history
-                    self.history.add(&line)?;
-
                     if let Err(e) = self.editor.add_history_entry(line.as_str()) {
                         if !self.flags.is_set("quiet") {
                             eprintln!("Warning: Couldn't add to history: {}", e);
@@ -124,6 +121,11 @@ impl Shell {
     }
 
     fn execute_command(&mut self, command: &str) -> Result<(), ShellError> {
+        // Skip empty commands early
+        if command.trim().is_empty() {
+            return Ok(());
+        }
+
         // Expand aliases before processing the command
         let expanded_command = self.config.expand_aliases(command);
         let expanded_command = self.expand_env_vars(&expanded_command);
@@ -138,15 +140,37 @@ impl Shell {
         let command_name = args[0];
         let command_args: Vec<String> = args[1..].iter().map(|&s| s.to_string()).collect();
 
-        // First try to execute as a built-in command
-        match self.executor.execute(command_name, &command_args) {
-            Ok(_) => {
-                // Update current_dir after command execution
-                self.current_dir = env::current_dir()?
-                    .to_string_lossy()
-                    .to_string();
-                Ok(())
+        // Record start time for duration tracking
+        let start_time = std::time::Instant::now();
+        
+        // Execute the command
+        let result = self.executor.execute(command_name, &command_args);
+        
+        // Calculate duration
+        let duration = start_time.elapsed().as_millis() as u64;
+
+        // Add to our custom history with execution details
+        // Use the original command, not the expanded version
+        if let Err(e) = self.history.add_with_details(
+            command, 
+            result.is_err() as i32, // Convert bool to i32 (0 for success, 1 for error)
+            duration
+        ) {
+            if !self.flags.is_set("quiet") {
+                eprintln!("Warning: Failed to add command to history: {}", e);
             }
+        }
+
+        // Update current directory if command succeeded
+        if result.is_ok() {
+            self.current_dir = env::current_dir()?
+                .to_string_lossy()
+                .to_string();
+        }
+
+        // Return the original result
+        match result {
+            Ok(_) => Ok(()),
             Err(e) => Err(ShellError::CommandError(e)),
         }
     }

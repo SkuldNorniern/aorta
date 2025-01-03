@@ -1,4 +1,3 @@
-use crate::process::{ProcessError, ProcessExecutor};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -6,12 +5,18 @@ use std::sync::{Arc, Mutex};
 mod alias;
 mod builtin;
 mod cd;
+mod history;
 mod source;
 
 pub use alias::AliasCommand;
 pub use builtin::ExitCommand;
 pub use cd::CdCommand;
+pub use history::HistoryCommand;
 pub use source::SourceCommand;
+
+use crate::input::history::HistoryError;
+use crate::input::History;
+use crate::process::{ProcessError, ProcessExecutor};
 
 #[derive(Debug)]
 pub enum CommandError {
@@ -20,6 +25,7 @@ pub enum CommandError {
     ExecutionError(String),
     IoError(std::io::Error),
     ProcessError(ProcessError),
+    HistoryError(HistoryError),
 }
 
 impl std::fmt::Display for CommandError {
@@ -30,6 +36,7 @@ impl std::fmt::Display for CommandError {
             CommandError::ExecutionError(msg) => write!(f, "execution error: {}", msg),
             CommandError::IoError(err) => write!(f, "IO error: {}", err),
             CommandError::ProcessError(err) => write!(f, "Process error: {}", err),
+            CommandError::HistoryError(err) => write!(f, "History error: {}", err),
         }
     }
 }
@@ -56,6 +63,7 @@ enum CommandType {
     Source(SourceCommand),
     Exit(ExitCommand),
     Alias(AliasCommand),
+    History(HistoryCommand),
 }
 
 impl Command for CommandType {
@@ -65,6 +73,7 @@ impl Command for CommandType {
             CommandType::Source(cmd) => cmd.execute(args),
             CommandType::Exit(cmd) => cmd.execute(args),
             CommandType::Alias(cmd) => cmd.execute(args),
+            CommandType::History(cmd) => cmd.execute(args),
         }
     }
 }
@@ -76,13 +85,28 @@ pub struct CommandExecutor {
 }
 
 impl CommandExecutor {
-    pub fn new(flags: &crate::flags::Flags) -> Result<Self, crate::process::ProcessError> {
+    pub fn new(flags: &crate::flags::Flags) -> Result<Self, CommandError> {
         let mut executor = Self {
             commands: BTreeMap::new(),
             process_executor: ProcessExecutor::new(flags)?,
         };
 
-        // Create shared aliases storage
+        let history_path = dirs::home_dir()
+            .ok_or_else(|| {
+                CommandError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Home directory not found",
+                ))
+            })?
+            .join(".aorta_history");
+
+        // Create History instance first
+        let history_instance = History::new(history_path, 1000).map_err(|e| {
+            CommandError::ExecutionError(format!("Failed to create history: {:#?}", e))
+        })?;
+
+        // Then wrap it in Arc<Mutex>
+        let history = Arc::new(Mutex::new(history_instance));
         let aliases = Arc::new(Mutex::new(HashMap::new()));
 
         // Register commands
@@ -99,6 +123,10 @@ impl CommandExecutor {
         executor.commands.insert(
             "alias".to_string(),
             CommandType::Alias(AliasCommand::new(aliases)),
+        );
+        executor.commands.insert(
+            "history".to_string(),
+            CommandType::History(HistoryCommand::new(history)),
         );
 
         Ok(executor)
