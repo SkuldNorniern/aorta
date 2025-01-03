@@ -16,7 +16,11 @@ pub enum HistoryEntry {
 }
 
 impl HistoryEntry {
-    pub fn new_command(command: impl Into<Cow<'static, str>>, exit_code: i32, duration: u64) -> Self {
+    pub fn new_command(
+        command: impl Into<Cow<'static, str>>,
+        exit_code: i32,
+        duration: u64,
+    ) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()

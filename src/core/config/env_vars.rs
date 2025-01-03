@@ -25,14 +25,16 @@ impl EnvVarManager {
         } else {
             value.to_string()
         };
-        
-        self.env_vars.insert(name.into(), clean_value.clone().into());
+
+        self.env_vars
+            .insert(name.into(), clean_value.clone().into());
         env::set_var(name, clean_value);
     }
 
     fn sanitize_path(&self, path: &str) -> String {
         // Split path by common separators (: and any quotes)
-        let parts: Vec<&str> = path.split(|c| c == ':' || c == '"' || c == '\'')
+        let parts: Vec<&str> = path
+            .split([':', '"', '\''])
             .filter(|s| !s.is_empty())
             .collect();
 

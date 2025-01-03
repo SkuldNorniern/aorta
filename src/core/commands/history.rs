@@ -109,9 +109,7 @@ impl HistoryCommand {
             .lock()
             .map_err(|_| CommandError::ExecutionError("Failed to lock history".to_string()))?;
 
-        history
-            .delete_at(index)
-            .map_err(CommandError::HistoryError)
+        history.delete_at(index).map_err(CommandError::HistoryError)
     }
 }
 

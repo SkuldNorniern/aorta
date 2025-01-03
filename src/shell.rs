@@ -29,9 +29,11 @@ impl Shell {
         editor.set_auto_add_history(true);
 
         let current_dir = env::current_dir()?.to_string_lossy().to_string();
-        let mut config = Config::new()?;
+        let config = Config::new()?;
 
         // Load config before setting up other components
+        let executor = CommandExecutor::new(&flags)?;
+        let mut config = Config::new()?.with_executor(executor);
         config.load()?;
 
         // After loading config, update the current process environment
@@ -142,19 +144,19 @@ impl Shell {
 
         // Record start time for duration tracking
         let start_time = std::time::Instant::now();
-        
+
         // Execute the command
         let result = self.executor.execute(command_name, &command_args);
-        
+
         // Calculate duration
         let duration = start_time.elapsed().as_millis() as u64;
 
         // Add to our custom history with execution details
         // Use the original command, not the expanded version
         if let Err(e) = self.history.add_with_details(
-            command, 
+            command,
             result.is_err() as i32, // Convert bool to i32 (0 for success, 1 for error)
-            duration
+            duration,
         ) {
             if !self.flags.is_set("quiet") {
                 eprintln!("Warning: Failed to add command to history: {}", e);
@@ -163,9 +165,7 @@ impl Shell {
 
         // Update current directory if command succeeded
         if result.is_ok() {
-            self.current_dir = env::current_dir()?
-                .to_string_lossy()
-                .to_string();
+            self.current_dir = env::current_dir()?.to_string_lossy().to_string();
         }
 
         // Return the original result

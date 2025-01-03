@@ -25,23 +25,25 @@ impl FileOps {
         let mut entries = Vec::new();
 
         if self.file_path.exists() {
-            let file = File::open(&self.file_path)
-                .map_err(|e| HistoryError::IoError(e))?;
+            let file = File::open(&self.file_path).map_err(HistoryError::IoError)?;
             let reader = BufReader::new(file);
 
             for line in reader.lines() {
-                let line = line.map_err(|e| HistoryError::IoError(e))?;
+                let line = line.map_err(HistoryError::IoError)?;
                 if !line.trim().is_empty() {
                     let parts: Vec<&str> = line.split('|').collect();
                     match parts.as_slice() {
                         [command, timestamp, exit_code, duration] => {
-                            let timestamp = timestamp.parse()
-                                .map_err(|_| HistoryError::FileOperationError("Invalid timestamp".into()))?;
-                            let exit_code = exit_code.parse()
-                                .map_err(|_| HistoryError::FileOperationError("Invalid exit code".into()))?;
-                            let duration = duration.parse()
-                                .map_err(|_| HistoryError::FileOperationError("Invalid duration".into()))?;
-                            
+                            let timestamp = timestamp.parse().map_err(|_| {
+                                HistoryError::FileOperationError("Invalid timestamp".into())
+                            })?;
+                            let exit_code = exit_code.parse().map_err(|_| {
+                                HistoryError::FileOperationError("Invalid exit code".into())
+                            })?;
+                            let duration = duration.parse().map_err(|_| {
+                                HistoryError::FileOperationError("Invalid duration".into())
+                            })?;
+
                             entries.push(HistoryEntry::Command {
                                 command: Cow::Owned(command.to_string()),
                                 timestamp,
@@ -50,11 +52,7 @@ impl FileOps {
                             });
                         }
                         _ => {
-                            entries.push(HistoryEntry::new_command(
-                                line,
-                                0,
-                                0,
-                            ));
+                            entries.push(HistoryEntry::new_command(line, 0, 0));
                         }
                     }
                 }
@@ -69,19 +67,27 @@ impl FileOps {
             .create(true)
             .append(true)
             .open(&self.file_path)
-            .map_err(|e| HistoryError::IoError(e))?;
+            .map_err(HistoryError::IoError)?;
 
         match entry {
-            HistoryEntry::Command { command, timestamp, exit_code, duration } => {
+            HistoryEntry::Command {
+                command,
+                timestamp,
+                exit_code,
+                duration,
+            } => {
                 writeln!(file, "{}|{}|{}|{}", command, timestamp, exit_code, duration)
-                    .map_err(|e| HistoryError::IoError(e))?;
+                    .map_err(HistoryError::IoError)?;
             }
-            HistoryEntry::Event { description, timestamp } => {
+            HistoryEntry::Event {
+                description,
+                timestamp,
+            } => {
                 writeln!(file, "{}|{}|0|0", description, timestamp)
-                    .map_err(|e| HistoryError::IoError(e))?;
+                    .map_err(HistoryError::IoError)?;
             }
         }
-        
+
         Ok(())
     }
 }

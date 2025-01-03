@@ -53,11 +53,10 @@ impl History {
         let mut command_frequencies = HashMap::new();
         let entries: VecDeque<_> = raw_entries
             .into_iter()
-            .map(|entry| {
-                if let HistoryEntry::Command { command, .. } = &entry {
+            .inspect(|entry| {
+                if let HistoryEntry::Command { command, .. } = entry {
                     *command_frequencies.entry(command.to_string()).or_insert(0) += 1;
                 }
-                entry
             })
             .collect();
 
@@ -177,11 +176,7 @@ impl History {
             return Err(HistoryError::EmptyCommand);
         }
 
-        let entry = HistoryEntry::new_command(
-            command.to_string(),
-            exit_code,
-            duration,
-        );
+        let entry = HistoryEntry::new_command(command.to_string(), exit_code, duration);
 
         // Save to file first
         self.file_ops
@@ -189,7 +184,8 @@ impl History {
             .map_err(|e| HistoryError::FileOperationError(e.to_string()))?;
 
         // Update frequency counter
-        *self.command_frequencies
+        *self
+            .command_frequencies
             .entry(command.to_string())
             .or_insert(0) += 1;
 
