@@ -52,6 +52,7 @@ impl Config {
 #[derive(Debug)]
 pub enum ConfigError {
     HomeDirNotFound,
+    EnvVarNotFound(String),
     ConfigFileNotFound(String),
     IoError(std::io::Error),
 }
@@ -72,6 +73,7 @@ impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConfigError::HomeDirNotFound => write!(f, "Home directory not found"),
+            ConfigError::EnvVarNotFound(var) => write!(f, "Environment variable not found: {}", var),
             ConfigError::ConfigFileNotFound(path) => write!(f, "Config file not found: {}", path),
             ConfigError::IoError(e) => write!(f, "IO error: {}", e),
         }

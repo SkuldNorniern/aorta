@@ -59,17 +59,27 @@ impl<'a> ConfigLoader<'a> {
     }
 
     fn process_path_var(&self, value: &str, config: &mut Config) -> Result<(), ConfigError> {
-        let current_path = std::env::var("PATH").unwrap_or_default();
-        let mut value = value.replace("$PATH", &current_path);
+        let current_path = std::env::var("PATH")
+            .map_err(|_| ConfigError::EnvVarNotFound("PATH".to_string()))?;
+            
+        let mut value = value.trim();
 
-        // Remove quotes if present
-        if value.starts_with('"') && value.ends_with('"') {
-            value = value[1..value.len() - 1].to_string();
+        // Remove any surrounding quotes
+        if (value.starts_with('"') && value.ends_with('"')) 
+            || (value.starts_with('\'') && value.ends_with('\'')) {
+            value = &value[1..value.len() - 1];
         }
 
-        // Use EnvVarManager's expand_value for $HOME expansion
-        let expanded_path = config.env_vars.expand_value(&value);
-        config.env_vars.set("PATH", &expanded_path);
+        // Handle $PATH replacement without adding quotes
+        let new_path = if value.contains("$PATH") {
+            value.replace("$PATH", &current_path)
+        } else {
+            // If no $PATH variable, append to current path
+            format!("{}:{}", value, current_path)
+        };
+
+        // Let EnvVarManager handle the sanitization
+        config.env_vars.set("PATH", &new_path);
         Ok(())
     }
 

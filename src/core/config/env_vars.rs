@@ -20,8 +20,31 @@ impl EnvVarManager {
     }
 
     pub fn set(&mut self, name: &str, value: &str) {
-        self.env_vars.insert(name.into(), value.into());
-        env::set_var(name, value);
+        let clean_value = if name == "PATH" {
+            self.sanitize_path(value)
+        } else {
+            value.to_string()
+        };
+        
+        self.env_vars.insert(name.into(), clean_value.clone().into());
+        env::set_var(name, clean_value);
+    }
+
+    fn sanitize_path(&self, path: &str) -> String {
+        // Split path by common separators (: and any quotes)
+        let parts: Vec<&str> = path.split(|c| c == ':' || c == '"' || c == '\'')
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        // Deduplicate paths while maintaining order
+        let mut seen = std::collections::HashSet::new();
+        let unique_parts: Vec<&str> = parts
+            .into_iter()
+            .filter(|part| seen.insert(*part))
+            .collect();
+
+        // Rejoin with proper separators
+        unique_parts.join(":")
     }
 
     pub fn expand_value<'a>(&self, value: &'a str) -> Cow<'a, str> {
