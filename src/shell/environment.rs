@@ -26,4 +26,4 @@ impl EnvironmentHandler for super::Shell {
 
         result
     }
-} 
+}

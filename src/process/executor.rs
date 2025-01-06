@@ -34,16 +34,16 @@ impl CommandExecutor {
             })
             .collect();
 
-        let child = Command::new(&expanded_args[0])
+        let mut command = Command::new(&expanded_args[0]);
+        command
             .args(&expanded_args[1..])
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .env_clear()
-            .envs(env::vars())
-            .spawn();
+            .envs(std::env::vars());
 
-        let mut child = match child {
+        let mut child = match command.spawn() {
             Ok(child) => child,
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::NotFound {

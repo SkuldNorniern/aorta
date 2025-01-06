@@ -31,7 +31,7 @@ impl FileOps {
             for line in reader.lines() {
                 let line = line.map_err(HistoryError::IoError)?;
                 if !line.trim().is_empty() {
-                    let parts: Vec<&str> = line.split('|').collect();
+                    let parts: Vec<&str> = line.split('\x1F').collect();
                     match parts.as_slice() {
                         [command, timestamp, exit_code, duration] => {
                             let timestamp = timestamp.parse().map_err(|_| {
@@ -76,14 +76,14 @@ impl FileOps {
                 exit_code,
                 duration,
             } => {
-                writeln!(file, "{}|{}|{}|{}", command, timestamp, exit_code, duration)
+                writeln!(file, "{}\x1F{}\x1F{}\x1F{}", command, timestamp, exit_code, duration)
                     .map_err(HistoryError::IoError)?;
             }
             HistoryEntry::Event {
                 description,
                 timestamp,
             } => {
-                writeln!(file, "{}|{}|0|0", description, timestamp)
+                writeln!(file, "{}\x1F{}\x1F0\x1F0", description, timestamp)
                     .map_err(HistoryError::IoError)?;
             }
         }

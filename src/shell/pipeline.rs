@@ -1,21 +1,19 @@
 use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
     io::{Read, Write},
     process::{Command, Stdio},
-    collections::{HashMap, BTreeMap},
-    borrow::Cow,
 };
 
-use crate::{
-    core::commands::{CommandExecutor, CommandError},
-};
+use crate::core::commands::{CommandError, CommandExecutor};
 
 #[derive(Debug)]
 pub enum PipelineOperator {
-    Pipe,           // |
-    And,           // &&
-    Or,            // ||
-    Sequence,      // ;
-    Redirect,      // >
+    Pipe,     // |
+    And,      // &&
+    Or,       // ||
+    Sequence, // ;
+    Redirect, // >
 }
 
 #[derive(Debug)]
@@ -81,31 +79,43 @@ impl Pipeline {
                         let remaining: String = chars.clone().collect();
                         if remaining.trim().is_empty() {
                             return Err(PipelineError::ParseError(
-                                "Incomplete pipeline: missing command after |".to_string()
+                                "Incomplete pipeline: missing command after |".to_string(),
                             ));
                         }
-                        Self::add_stage(&mut stages, &current_command, Some(PipelineOperator::Pipe))?;
+                        Self::add_stage(
+                            &mut stages,
+                            &current_command,
+                            Some(PipelineOperator::Pipe),
+                        )?;
                     }
                     current_command.clear();
                 }
                 '&' if chars.peek() == Some(&'&') => {
                     chars.next(); // consume second '&'
-                    // Check if there's any non-whitespace content after &&
+                                  // Check if there's any non-whitespace content after &&
                     let remaining: String = chars.clone().collect();
                     if remaining.trim().is_empty() {
                         return Err(PipelineError::ParseError(
-                            "Incomplete command: missing command after &&".to_string()
+                            "Incomplete command: missing command after &&".to_string(),
                         ));
                     }
                     Self::add_stage(&mut stages, &current_command, Some(PipelineOperator::And))?;
                     current_command.clear();
                 }
                 ';' => {
-                    Self::add_stage(&mut stages, &current_command, Some(PipelineOperator::Sequence))?;
+                    Self::add_stage(
+                        &mut stages,
+                        &current_command,
+                        Some(PipelineOperator::Sequence),
+                    )?;
                     current_command.clear();
                 }
                 '>' => {
-                    Self::add_stage(&mut stages, &current_command, Some(PipelineOperator::Redirect))?;
+                    Self::add_stage(
+                        &mut stages,
+                        &current_command,
+                        Some(PipelineOperator::Redirect),
+                    )?;
                     current_command.clear();
                 }
                 _ => current_command.push(c),
@@ -152,14 +162,15 @@ impl Pipeline {
         &self,
         env_vars: &HashMap<String, String>,
         aliases: &BTreeMap<Cow<'_, str>, Cow<'_, str>>,
-        executor: &CommandExecutor
+        executor: &CommandExecutor,
     ) -> Result<(), PipelineError> {
         let mut previous_output: Option<Vec<u8>> = None;
 
         for (index, stage) in self.stages.iter().enumerate() {
             // First expand aliases and split into parts
             let expanded_parts = if let Some(alias) = aliases.get(stage.command.as_str()) {
-                alias.split_whitespace()
+                alias
+                    .split_whitespace()
                     .map(|s| s.to_string())
                     .collect::<Vec<String>>()
             } else {
@@ -175,13 +186,13 @@ impl Pipeline {
                     if command == "grep" {
                         if args.is_empty() {
                             return Err(PipelineError::ExecutionError(
-                                "grep: no pattern specified".to_string()
+                                "grep: no pattern specified".to_string(),
                             ));
                         }
 
                         // Create a temp file for grep input
                         let temp_input = format!("/tmp/aorta_input_{}", std::process::id());
-                        
+
                         // Write previous output or empty string to temp file
                         if let Some(prev_out) = previous_output.take() {
                             std::fs::write(&temp_input, prev_out)?;
@@ -197,7 +208,8 @@ impl Pipeline {
                         grep_args.push(temp_input.clone());
 
                         // Execute grep through executor
-                        executor.execute(&command, &grep_args)
+                        executor
+                            .execute(&command, &grep_args)
                             .map_err(|e| PipelineError::ExecutionError(e.to_string()))?;
 
                         // Read the output if it exists
@@ -210,7 +222,8 @@ impl Pipeline {
                                 .stdout(Stdio::piped())
                                 .stderr(Stdio::inherit());
 
-                            let output = cmd.output()
+                            let output = cmd
+                                .output()
                                 .map_err(|e| PipelineError::ExecutionError(e.to_string()))?;
                             previous_output = Some(output.stdout);
                         }
@@ -225,13 +238,18 @@ impl Pipeline {
                             .stdout(Stdio::piped())
                             .stderr(Stdio::inherit());
 
-                        let output = cmd.output()
+                        let output = cmd
+                            .output()
                             .map_err(|e| PipelineError::ExecutionError(e.to_string()))?;
                         previous_output = Some(output.stdout);
                     }
                 }
-                Some(PipelineOperator::And) | Some(PipelineOperator::Or) | Some(PipelineOperator::Sequence) | None => {
-                    executor.execute(&command, &args)
+                Some(PipelineOperator::And)
+                | Some(PipelineOperator::Or)
+                | Some(PipelineOperator::Sequence)
+                | None => {
+                    executor
+                        .execute(&command, &args)
                         .map_err(|e| PipelineError::ExecutionError(e.to_string()))?;
                     previous_output = None;
                 }
@@ -245,14 +263,15 @@ impl Pipeline {
                                 .stdout(Stdio::piped())
                                 .stderr(Stdio::inherit());
 
-                            let output = cmd.output()
+                            let output = cmd
+                                .output()
                                 .map_err(|e| PipelineError::ExecutionError(e.to_string()))?;
                             std::fs::write(&next_stage.command, output.stdout)?;
                         }
                         break;
                     } else {
                         return Err(PipelineError::ExecutionError(
-                            "Redirect operator requires a file path".to_string()
+                            "Redirect operator requires a file path".to_string(),
                         ));
                     }
                 }
@@ -273,7 +292,7 @@ impl Pipeline {
 
     fn expand_env_vars(&self, input: &str, env_vars: &HashMap<String, String>) -> String {
         let mut result = input.to_string();
-        
+
         // Handle $VAR style variables
         while let Some(dollar_pos) = result.find('$') {
             if dollar_pos + 1 >= result.len() {
@@ -298,4 +317,4 @@ impl Pipeline {
 
         result
     }
-} 
+}

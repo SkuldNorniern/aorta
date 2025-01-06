@@ -3,23 +3,23 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 mod alias;
-mod exit;
 mod cd;
+mod exit;
 mod export;
 mod history;
 mod source;
 
 pub use alias::AliasCommand;
-pub use exit::ExitCommand;
 pub use cd::CdCommand;
+pub use exit::ExitCommand;
 pub use export::ExportCommand;
 pub use history::HistoryCommand;
 pub use source::SourceCommand;
 
+use crate::core::env::EnvVarManager;
 use crate::input::history::HistoryError;
 use crate::input::History;
 use crate::process::{ProcessError, ProcessExecutor};
-use crate::core::env::EnvVarManager;
 
 #[derive(Debug)]
 pub enum CommandError {
@@ -95,8 +95,9 @@ impl CommandExecutor {
         let mut executor = Self {
             commands: BTreeMap::new(),
             process_executor: ProcessExecutor::new(flags)?,
-            env_vars: Arc::new(Mutex::new(EnvVarManager::new().map_err(|e| 
-                CommandError::ExecutionError(format!("Failed to create env manager: {}", e)))?)),
+            env_vars: Arc::new(Mutex::new(EnvVarManager::new().map_err(|e| {
+                CommandError::ExecutionError(format!("Failed to create env manager: {}", e))
+            })?)),
         };
 
         let history_path = dirs::home_dir()
@@ -118,15 +119,16 @@ impl CommandExecutor {
         let aliases = Arc::new(Mutex::new(HashMap::new()));
 
         // Register commands
-        executor.commands.insert("cd".to_string(), CommandType::Cd(CdCommand::new()));
+        executor
+            .commands
+            .insert("cd".to_string(), CommandType::Cd(CdCommand::new()));
         executor.commands.insert(
             "source".to_string(),
             CommandType::Source(SourceCommand::new(executor.clone())),
         );
-        executor.commands.insert(
-            "exit".to_string(), 
-            CommandType::Exit(ExitCommand::new())
-        );
+        executor
+            .commands
+            .insert("exit".to_string(), CommandType::Exit(ExitCommand::new()));
         executor.commands.insert(
             "alias".to_string(),
             CommandType::Alias(AliasCommand::new(aliases)),
@@ -370,7 +372,7 @@ mod tests {
         // Test export and source interaction
         let test_file = temp_dir.join("test_export.txt");
         std::fs::write(&test_file, "export TEST_SOURCE=sourced\n")?;
-        
+
         executor.execute("source", &[test_file.to_str().unwrap().to_string()])?;
         assert_eq!(env::var("TEST_SOURCE").unwrap(), "sourced");
 
@@ -381,22 +383,22 @@ mod tests {
     #[test]
     fn test_export_persistence() -> Result<(), CommandError> {
         let (executor1, _) = setup_test_env();
-        
+
         // Set variable in first executor
         executor1.execute("export", &["PERSIST_VAR=original".to_string()])?;
-        
+
         // Create new executor
         let (executor2, _) = setup_test_env();
-        
+
         // Variable should persist
         assert_eq!(env::var("PERSIST_VAR").unwrap(), "original");
-        
+
         // Modify in second executor
         executor2.execute("export", &["PERSIST_VAR=modified".to_string()])?;
-        
+
         // Check both executors see the change
         assert_eq!(env::var("PERSIST_VAR").unwrap(), "modified");
-        
+
         Ok(())
     }
 
@@ -413,7 +415,10 @@ mod tests {
         assert_eq!(env::var("UNICODE_VAR").unwrap(), "值🦀");
 
         // Test with newlines and tabs
-        executor.execute("export", &["MULTILINE_VAR=line1\nline2\tindented".to_string()])?;
+        executor.execute(
+            "export",
+            &["MULTILINE_VAR=line1\nline2\tindented".to_string()],
+        )?;
         assert_eq!(env::var("MULTILINE_VAR").unwrap(), "line1\nline2\tindented");
 
         Ok(())
