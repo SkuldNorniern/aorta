@@ -1,9 +1,9 @@
-use std::env;
 use rustyline::{config::Configurer, history::FileHistory, Editor};
+use std::env;
 
-mod executor;
-pub(crate)mod pipeline;
 mod environment;
+mod executor;
+pub(crate) mod pipeline;
 
 use crate::{
     core::{commands::CommandExecutor, config::Config},
@@ -33,11 +33,16 @@ impl Shell {
         editor.set_auto_add_history(true);
 
         let current_dir = env::current_dir()?.to_string_lossy().to_string();
-        
+
         // Load config and executor
         let executor = CommandExecutor::new(&flags)?;
         let mut config = Config::new()?.with_executor(executor);
         config.load()?;
+
+        // After loading config, update the current process environment
+        if let Some(path) = env::var_os("PATH") {
+            env::set_var("PATH", path.clone());
+        }
 
         // Set up history
         let history_file = dirs::home_dir()
@@ -122,4 +127,4 @@ impl Shell {
         }
         Ok(())
     }
-} 
+}

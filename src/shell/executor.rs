@@ -1,7 +1,7 @@
-use crate::error::ShellError;
-use super::environment::EnvironmentHandler;
 use super::pipeline::Pipeline;
+use crate::error::ShellError;
 use std::collections::HashMap;
+use super::environment::EnvironmentHandler;
 
 pub(crate) trait CommandHandler {
     fn execute_command(&mut self, command: &str) -> Result<(), ShellError>;
@@ -17,27 +17,27 @@ impl CommandHandler for super::Shell {
         // Record start time for duration tracking
         let start_time = std::time::Instant::now();
 
-        // Parse pipeline with the original command
-        // Let the pipeline handle alias and env var expansion
-        let pipeline = Pipeline::parse(command)
-            .map_err(ShellError::PipelineError)?;
+        // First expand environment variables in the command
+        let expanded_command = self.expand_env_vars(command);
 
-        // Create environment variables HashMap
-        let env_vars: HashMap<String, String> = std::env::vars().collect();
+        // Parse pipeline with the expanded command
+        let pipeline = Pipeline::parse(&expanded_command).map_err(ShellError::PipelineError)?;
+
+        // Create environment variables HashMap with expanded values
+        let env_vars: HashMap<String, String> = std::env::vars()
+            .map(|(k, v)| (k, self.expand_env_vars(&v)))
+            .collect();
 
         // Execute pipeline with shell context
-        let result = pipeline.execute_with_context(
-            &env_vars,
-            &self.config.get_aliases(),
-            &self.executor,
-        );
+        let result =
+            pipeline.execute_with_context(&env_vars, &self.config.get_aliases(), &self.executor);
 
         // Calculate duration
         let duration = start_time.elapsed().as_millis() as u64;
 
         // Add to history with execution details
         if let Err(e) = self.history.add_with_details(
-            command,  // Use original command for history
+            command, // Use original command for history
             result.is_err() as i32,
             duration,
         ) {
@@ -56,4 +56,4 @@ impl CommandHandler for super::Shell {
             Err(e) => Err(ShellError::PipelineError(e)),
         }
     }
-} 
+}
