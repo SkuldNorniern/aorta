@@ -136,7 +136,8 @@ impl<'a> ConfigLoader<'a> {
     }
 
     fn extract_path(&self, s: &str, prefix: &str, config: &Config) -> Result<PathBuf, ConfigError> {
-        let path = s.trim_start_matches(prefix)
+        let path = s
+            .trim_start_matches(prefix)
             .trim_end_matches(" ]")
             .trim_matches('"');
         let expanded_path = config.env_vars.expand_value(path);
@@ -166,7 +167,12 @@ impl<'a> ConfigLoader<'a> {
         self.process_conditional_block(line, condition_met, config)
     }
 
-    fn process_conditional_block(&self, line: &str, condition_met: bool, config: &mut Config) -> Result<(), ConfigError> {
+    fn process_conditional_block(
+        &self,
+        line: &str,
+        condition_met: bool,
+        config: &mut Config,
+    ) -> Result<(), ConfigError> {
         let mut in_then_block = false;
         let mut skip_until_fi = !condition_met;
 
