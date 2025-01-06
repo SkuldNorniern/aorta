@@ -19,6 +19,7 @@ pub use source::SourceCommand;
 use crate::input::history::HistoryError;
 use crate::input::History;
 use crate::process::{ProcessError, ProcessExecutor};
+use crate::core::env::EnvVarManager;
 
 #[derive(Debug)]
 pub enum CommandError {
@@ -66,6 +67,7 @@ enum CommandType {
     Exit(ExitCommand),
     Alias(AliasCommand),
     History(HistoryCommand),
+    Export(ExportCommand),
 }
 
 impl Command for CommandType {
@@ -76,6 +78,7 @@ impl Command for CommandType {
             CommandType::Exit(cmd) => cmd.execute(args),
             CommandType::Alias(cmd) => cmd.execute(args),
             CommandType::History(cmd) => cmd.execute(args),
+            CommandType::Export(cmd) => cmd.execute(args),
         }
     }
 }
@@ -84,6 +87,7 @@ impl Command for CommandType {
 pub struct CommandExecutor {
     commands: BTreeMap<String, CommandType>,
     process_executor: ProcessExecutor,
+    env_vars: Arc<Mutex<EnvVarManager>>,
 }
 
 impl CommandExecutor {
@@ -91,6 +95,8 @@ impl CommandExecutor {
         let mut executor = Self {
             commands: BTreeMap::new(),
             process_executor: ProcessExecutor::new(flags)?,
+            env_vars: Arc::new(Mutex::new(EnvVarManager::new().map_err(|e| 
+                CommandError::ExecutionError(format!("Failed to create env manager: {}", e)))?)),
         };
 
         let history_path = dirs::home_dir()
@@ -112,16 +118,15 @@ impl CommandExecutor {
         let aliases = Arc::new(Mutex::new(HashMap::new()));
 
         // Register commands
-        executor
-            .commands
-            .insert("cd".to_string(), CommandType::Cd(CdCommand::new()));
+        executor.commands.insert("cd".to_string(), CommandType::Cd(CdCommand::new()));
         executor.commands.insert(
             "source".to_string(),
             CommandType::Source(SourceCommand::new(executor.clone())),
         );
-        executor
-            .commands
-            .insert("exit".to_string(), CommandType::Exit(ExitCommand::new()));
+        executor.commands.insert(
+            "exit".to_string(), 
+            CommandType::Exit(ExitCommand::new())
+        );
         executor.commands.insert(
             "alias".to_string(),
             CommandType::Alias(AliasCommand::new(aliases)),
@@ -129,6 +134,12 @@ impl CommandExecutor {
         executor.commands.insert(
             "history".to_string(),
             CommandType::History(HistoryCommand::new(history)),
+        );
+        
+        // Add export command
+        executor.commands.insert(
+            "export".to_string(),
+            CommandType::Export(ExportCommand::new(executor.env_vars.clone())),
         );
 
         Ok(executor)

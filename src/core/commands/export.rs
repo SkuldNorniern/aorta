@@ -1,13 +1,15 @@
 use super::{Command, CommandError};
 use crate::core::env::{EnvError, EnvVarManager};
 use std::borrow::Cow;
+use std::sync::{Arc, Mutex};
 
-pub struct ExportCommand<'a> {
-    env_vars: &'a mut EnvVarManager,
+#[derive(Clone)]
+pub struct ExportCommand {
+    env_vars: Arc<Mutex<EnvVarManager>>,
 }
 
-impl<'a> ExportCommand<'a> {
-    pub fn new(env_vars: &'a mut EnvVarManager) -> ExportCommand<'a> {
+impl ExportCommand {
+    pub fn new(env_vars: Arc<Mutex<EnvVarManager>>) -> Self {
         Self { env_vars }
     }
 
@@ -52,7 +54,7 @@ impl<'a> ExportCommand<'a> {
     }
 }
 
-impl Command for ExportCommand<'_> {
+impl Command for ExportCommand {
     fn execute(&self, args: &[String]) -> Result<(), CommandError> {
         if args.is_empty() {
             return Err(CommandError::InvalidArguments(
@@ -62,15 +64,14 @@ impl Command for ExportCommand<'_> {
 
         let (name, value) = self.parse_export(args)?;
 
-        // Since we can't use &mut self in execute, we need to handle interior mutability
-        // This is safe because we're the only one modifying the environment at this point
-        unsafe {
-            let env_vars = &mut *(self.env_vars as *const _ as *mut EnvVarManager);
-            env_vars.set(&name, &value).map_err(|e| match e {
-                EnvError::InvalidValue(msg) => CommandError::InvalidArguments(msg.to_string()),
-                _ => CommandError::InvalidArguments(e.to_string()),
-            })?;
-        }
+        let mut env_vars = self.env_vars.lock().map_err(|_| {
+            CommandError::ExecutionError("Failed to lock environment variables".into())
+        })?;
+
+        env_vars.set(&name, &value).map_err(|e| match e {
+            EnvError::InvalidValue(msg) => CommandError::InvalidArguments(msg.to_string()),
+            _ => CommandError::InvalidArguments(e.to_string()),
+        })?;
 
         Ok(())
     }
@@ -81,9 +82,9 @@ mod tests {
     use super::*;
     use std::env;
 
-    fn setup_command() -> ExportCommand<'static> {
+    fn setup_command() -> ExportCommand {
         let env_vars = EnvVarManager::new().unwrap();
-        ExportCommand::new(Box::leak(Box::new(env_vars)))
+        ExportCommand::new(Arc::new(Mutex::new(env_vars)))
     }
 
     #[test]
