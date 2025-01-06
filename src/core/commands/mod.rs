@@ -3,14 +3,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 mod alias;
-mod builtin;
+mod exit;
 mod cd;
 mod export;
 mod history;
 mod source;
 
 pub use alias::AliasCommand;
-pub use builtin::ExitCommand;
+pub use exit::ExitCommand;
 pub use cd::CdCommand;
 pub use export::ExportCommand;
 pub use history::HistoryCommand;
@@ -135,8 +135,6 @@ impl CommandExecutor {
             "history".to_string(),
             CommandType::History(HistoryCommand::new(history)),
         );
-        
-        // Add export command
         executor.commands.insert(
             "export".to_string(),
             CommandType::Export(ExportCommand::new(executor.env_vars.clone())),
@@ -311,5 +309,113 @@ mod tests {
         for error in errors {
             assert!(!error.to_string().is_empty());
         }
+    }
+
+    #[test]
+    fn test_execute_export() -> Result<(), CommandError> {
+        let (executor, _) = setup_test_env();
+
+        // Test basic export
+        executor.execute("export", &["TEST_VAR=value".to_string()])?;
+        assert_eq!(env::var("TEST_VAR").unwrap(), "value");
+
+        // Test export with spaces
+        executor.execute("export", &["SPACE_VAR=value with spaces".to_string()])?;
+        assert_eq!(env::var("SPACE_VAR").unwrap(), "value with spaces");
+
+        // Test export with quotes
+        executor.execute("export", &["QUOTED_VAR=\"quoted value\"".to_string()])?;
+        assert_eq!(env::var("QUOTED_VAR").unwrap(), "quoted value");
+
+        // Test PATH export with expansion
+        env::set_var("PATH", "/usr/bin");
+        executor.execute("export", &["PATH=/usr/local/bin:$PATH".to_string()])?;
+        assert!(env::var("PATH").unwrap().starts_with("/usr/local/bin:"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_export_error_cases() {
+        let (executor, _) = setup_test_env();
+
+        // Test empty arguments
+        assert!(matches!(
+            executor.execute("export", &[]),
+            Err(CommandError::InvalidArguments(_))
+        ));
+
+        // Test invalid format
+        assert!(matches!(
+            executor.execute("export", &["INVALID".to_string()]),
+            Err(CommandError::InvalidArguments(_))
+        ));
+
+        // Test empty variable name
+        assert!(matches!(
+            executor.execute("export", &["=value".to_string()]),
+            Err(CommandError::InvalidArguments(_))
+        ));
+    }
+
+    #[test]
+    fn test_command_interaction() -> Result<(), CommandError> {
+        let (executor, temp_dir) = setup_test_env();
+
+        // Test export and cd interaction
+        executor.execute("export", &["TEST_DIR=/tmp".to_string()])?;
+        executor.execute("cd", &["$TEST_DIR".to_string()])?;
+        assert_eq!(env::current_dir().unwrap().to_str().unwrap(), "/tmp");
+
+        // Test export and source interaction
+        let test_file = temp_dir.join("test_export.txt");
+        std::fs::write(&test_file, "export TEST_SOURCE=sourced\n")?;
+        
+        executor.execute("source", &[test_file.to_str().unwrap().to_string()])?;
+        assert_eq!(env::var("TEST_SOURCE").unwrap(), "sourced");
+
+        std::fs::remove_file(test_file)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_export_persistence() -> Result<(), CommandError> {
+        let (executor1, _) = setup_test_env();
+        
+        // Set variable in first executor
+        executor1.execute("export", &["PERSIST_VAR=original".to_string()])?;
+        
+        // Create new executor
+        let (executor2, _) = setup_test_env();
+        
+        // Variable should persist
+        assert_eq!(env::var("PERSIST_VAR").unwrap(), "original");
+        
+        // Modify in second executor
+        executor2.execute("export", &["PERSIST_VAR=modified".to_string()])?;
+        
+        // Check both executors see the change
+        assert_eq!(env::var("PERSIST_VAR").unwrap(), "modified");
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_export_special_chars() -> Result<(), CommandError> {
+        let (executor, _) = setup_test_env();
+
+        // Test with special characters
+        executor.execute("export", &["SPECIAL_VAR=value!@#$%^&*()".to_string()])?;
+        assert_eq!(env::var("SPECIAL_VAR").unwrap(), "value!@#$%^&*()");
+
+        // Test with unicode
+        executor.execute("export", &["UNICODE_VAR=值🦀".to_string()])?;
+        assert_eq!(env::var("UNICODE_VAR").unwrap(), "值🦀");
+
+        // Test with newlines and tabs
+        executor.execute("export", &["MULTILINE_VAR=line1\nline2\tindented".to_string()])?;
+        assert_eq!(env::var("MULTILINE_VAR").unwrap(), "line1\nline2\tindented");
+
+        Ok(())
     }
 }
