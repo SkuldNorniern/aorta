@@ -1,5 +1,7 @@
 use crate::error::ShellError;
 use super::environment::EnvironmentHandler;
+use super::pipeline::Pipeline;
+use std::collections::HashMap;
 
 pub(crate) trait CommandHandler {
     fn execute_command(&mut self, command: &str) -> Result<(), ShellError>;
@@ -12,27 +14,30 @@ impl CommandHandler for super::Shell {
             return Ok(());
         }
 
-        // Expand aliases and environment variables
-        let expanded_command = self.config.expand_aliases(command);
-        let expanded_command = EnvironmentHandler::expand_env_vars(self, &expanded_command);
-
-        // Parse command and arguments
-        let args: Vec<&str> = expanded_command.split_whitespace().collect();
-        if args.is_empty() {
-            return Ok(());
-        }
-
-        let command_name = args[0];
-        let command_args: Vec<String> = args[1..].iter().map(|&s| s.to_string()).collect();
-
-        // Execute and track command
+        // Record start time for duration tracking
         let start_time = std::time::Instant::now();
-        let result = self.executor.execute(command_name, &command_args);
+
+        // Parse pipeline with the original command
+        // Let the pipeline handle alias and env var expansion
+        let pipeline = Pipeline::parse(command)
+            .map_err(ShellError::PipelineError)?;
+
+        // Create environment variables HashMap
+        let env_vars: HashMap<String, String> = std::env::vars().collect();
+
+        // Execute pipeline with shell context
+        let result = pipeline.execute_with_context(
+            &env_vars,
+            &self.config.get_aliases(),
+            &self.executor,
+        );
+
+        // Calculate duration
         let duration = start_time.elapsed().as_millis() as u64;
 
-        // Update history
+        // Add to history with execution details
         if let Err(e) = self.history.add_with_details(
-            command,
+            command,  // Use original command for history
             result.is_err() as i32,
             duration,
         ) {
@@ -48,7 +53,7 @@ impl CommandHandler for super::Shell {
 
         match result {
             Ok(_) => Ok(()),
-            Err(e) => Err(ShellError::CommandError(e)),
+            Err(e) => Err(ShellError::PipelineError(e)),
         }
     }
 } 

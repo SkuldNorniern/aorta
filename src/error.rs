@@ -2,6 +2,7 @@ use crate::core::commands::CommandError;
 use crate::core::config::ConfigError;
 use crate::input::history::HistoryError;
 use crate::process::ProcessError;
+use crate::shell::pipeline::PipelineError;
 
 #[derive(Debug)]
 pub enum ShellError {
@@ -16,6 +17,7 @@ pub enum ShellError {
     CtrlC(String),
     CommandError(CommandError),
     HistoryError(HistoryError),
+    PipelineError(PipelineError),
 }
 
 impl From<rustyline::error::ReadlineError> for ShellError {
@@ -60,6 +62,12 @@ impl From<HistoryError> for ShellError {
     }
 }
 
+impl From<PipelineError> for ShellError {
+    fn from(err: PipelineError) -> Self {
+        ShellError::PipelineError(err)
+    }
+}
+
 impl std::fmt::Display for ShellError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -74,6 +82,7 @@ impl std::fmt::Display for ShellError {
             ShellError::ProcessError(e) => write!(f, "Process error: {}", e),
             ShellError::CommandError(e) => write!(f, "Command error: {}", e),
             ShellError::HistoryError(e) => write!(f, "History error: {}", e),
+            ShellError::PipelineError(e) => write!(f, "Pipeline error: {}", e),
         }
     }
 }

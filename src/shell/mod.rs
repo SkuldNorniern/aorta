@@ -2,6 +2,7 @@ use std::env;
 use rustyline::{config::Configurer, history::FileHistory, Editor};
 
 mod executor;
+pub(crate)mod pipeline;
 mod environment;
 
 use crate::{
