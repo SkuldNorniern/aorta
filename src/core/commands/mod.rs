@@ -5,12 +5,14 @@ use std::sync::{Arc, Mutex};
 mod alias;
 mod builtin;
 mod cd;
+mod export;
 mod history;
 mod source;
 
 pub use alias::AliasCommand;
 pub use builtin::ExitCommand;
 pub use cd::CdCommand;
+pub use export::ExportCommand;
 pub use history::HistoryCommand;
 pub use source::SourceCommand;
 
