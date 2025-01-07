@@ -1,5 +1,6 @@
 use rustyline::{config::Configurer, history::FileHistory, Editor};
 use std::env;
+use std::io::{self, Write};
 
 mod environment;
 mod executor;
@@ -52,7 +53,7 @@ impl Shell {
 
         // Set up ctrl-c handler
         ctrlc::set_handler(move || {
-            println!("\nUse 'exit' to exit the shell");
+            // println!("\nUse 'exit' to exit the shell");
         })?;
 
         let executor = CommandExecutor::new(&flags)?;
@@ -114,17 +115,71 @@ impl Shell {
     }
 
     fn register_as_shell(&self) -> Result<(), ShellError> {
-        let current_exe = env::current_exe()?;
-
-        // Check if the shell is in /etc/shells
-        let shells = std::fs::read_to_string("/etc/shells")?;
+        let current_exe = env::current_exe()
+            .map_err(|e| ShellError::PathError(e.to_string()))?;
         let shell_path = current_exe.to_string_lossy();
 
+        // Check if the shell is in /etc/shells
+        let shells = std::fs::read_to_string("/etc/shells")
+            .map_err(|e| ShellError::FileReadError(e.to_string()))?;
+
         if !shells.lines().any(|line| line == shell_path) {
-            println!("Warning: This shell is not registered in /etc/shells");
-            println!("To register, add the following line to /etc/shells:");
+            println!("\nAorta Shell Registration");
+            println!("------------------------");
+            println!("This shell is not registered in /etc/shells");
+            println!("Registration allows using Aorta as your default shell.");
+            println!("\nTo register manually, add this line to /etc/shells:");
             println!("{}", shell_path);
+            
+            print!("\nWould you like Aorta to attempt automatic registration? (requires sudo) [y/N]: ");
+            io::stdout()
+                .flush()
+                .map_err(|e| ShellError::IoError(e.to_string()))?;
+
+            let mut response = String::new();
+            io::stdin()
+                .read_line(&mut response)
+                .map_err(|e| ShellError::IoError(e.to_string()))?;
+
+            if response.trim().to_lowercase() == "y" {
+                match self.perform_shell_registration(&shell_path) {
+                    Ok(_) => println!("Successfully registered Aorta in /etc/shells"),
+                    Err(e) => println!("Failed to register shell: {}", e),
+                }
+            } else {
+                println!("Shell registration skipped.");
+            }
         }
+        Ok(())
+    }
+
+    fn perform_shell_registration(&self, shell_path: &str) -> Result<(), ShellError> {
+        use std::process::Command;
+
+        let mut status = Command::new("sudo")
+            .args(&["tee", "-a", "/etc/shells"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .spawn()
+            .map_err(|e| ShellError::ShellRegistrationError(e.to_string()))?;
+
+        if let Some(ref mut stdin) = status.stdin {
+            writeln!(stdin, "{}", shell_path)
+                .map_err(|e| ShellError::IoError(e.to_string()))?;
+        }
+
+        // Wait for the command to complete
+        let result = status
+            .wait_with_output()
+            .map_err(|e| ShellError::ShellRegistrationError(e.to_string()))?;
+
+        if !result.status.success() {
+            return Err(ShellError::ShellRegistrationError(
+                "Failed to register shell".to_string(),
+            ));
+        }
+
         Ok(())
     }
 }

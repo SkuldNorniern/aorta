@@ -18,6 +18,10 @@ pub enum ShellError {
     CommandError(CommandError),
     HistoryError(HistoryError),
     PipelineError(PipelineError),
+    PathError(String),
+    FileReadError(String),
+    IoError(String),
+    ShellRegistrationError(String),
 }
 
 impl From<rustyline::error::ReadlineError> for ShellError {
@@ -83,6 +87,10 @@ impl std::fmt::Display for ShellError {
             ShellError::CommandError(e) => write!(f, "Command error: {}", e),
             ShellError::HistoryError(e) => write!(f, "History error: {}", e),
             ShellError::PipelineError(e) => write!(f, "Pipeline error: {}", e),
+            ShellError::PathError(e) => write!(f, "Path error: {}", e),
+            ShellError::FileReadError(e) => write!(f, "File read error: {}", e),
+            ShellError::IoError(e) => write!(f, "IO error: {}", e),
+            ShellError::ShellRegistrationError(e) => write!(f, "Shell registration error: {}", e),
         }
     }
 }
