@@ -157,7 +157,7 @@ impl Shell {
         use std::process::Command;
 
         let mut status = Command::new("sudo")
-            .args(&["tee", "-a", "/etc/shells"])
+            .args(["tee", "-a", "/etc/shells"])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit())

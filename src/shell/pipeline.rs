@@ -160,7 +160,7 @@ impl Pipeline {
 
     pub fn execute_with_context(
         &self,
-        env_vars: &HashMap<String, String>,
+        _env_vars: &HashMap<String, String>,
         aliases: &BTreeMap<Cow<'_, str>, Cow<'_, str>>,
         executor: &CommandExecutor,
     ) -> Result<(), PipelineError> {
