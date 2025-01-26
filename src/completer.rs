@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use crate::highlight::SyntaxHighlighter;
 
 #[derive(Clone)]
 pub struct ShellCompleter {
@@ -194,7 +195,22 @@ impl ShellCompleter {
 }
 
 impl Helper for ShellCompleter {}
-impl Highlighter for ShellCompleter {}
+impl Highlighter for ShellCompleter {
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
+        // Create highlighter if not already cached
+        let highlighter = SyntaxHighlighter::new();
+        Cow::Owned(highlighter.highlight_command(line))
+    }
+
+    fn highlight_error<'l>(&self, line: &'l str) -> Cow<'l, str> {
+        let highlighter = SyntaxHighlighter::new();
+        Cow::Owned(highlighter.highlight_error(line))
+    }
+
+    fn highlight_char(&self, _line: &str, _pos: usize) -> bool {
+        true
+    }
+}
 impl Hinter for ShellCompleter {
     type Hint = String;
 }

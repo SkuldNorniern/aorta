@@ -1,10 +1,11 @@
 use std::{borrow::Cow, collections::BTreeMap};
 
 use super::{command::CommandCompleter, path::PathCompleter};
+use crate::highlight::SyntaxHighlighter;
 
 use rustyline::{
     completion::{Completer, Pair},
-    highlight::Highlighter,
+    highlight::{Highlighter, CmdKind},
     hint::Hinter,
     validate::Validator,
     Context, Helper,
@@ -14,6 +15,7 @@ use rustyline::{
 pub struct ShellCompleter {
     command_completer: CommandCompleter,
     path_completer: PathCompleter,
+    highlighter: SyntaxHighlighter,
 }
 
 impl Default for ShellCompleter {
@@ -27,6 +29,7 @@ impl ShellCompleter {
         ShellCompleter {
             command_completer: CommandCompleter::new(),
             path_completer: PathCompleter::new(),
+            highlighter: SyntaxHighlighter::new(),
         }
     }
 
@@ -40,7 +43,19 @@ impl ShellCompleter {
 }
 
 impl Helper for ShellCompleter {}
-impl Highlighter for ShellCompleter {}
+impl Highlighter for ShellCompleter {
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> std::borrow::Cow<'l, str> {
+        Cow::Owned(self.highlighter.highlight_command(line))
+    }
+
+    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
+        true
+    }
+
+    fn highlight_hint<'h>(&self, hint: &'h str) -> std::borrow::Cow<'h, str> {
+        Cow::Owned(self.highlighter.highlight_hint(hint))
+    }
+}
 impl Hinter for ShellCompleter {
     type Hint = String;
 }
