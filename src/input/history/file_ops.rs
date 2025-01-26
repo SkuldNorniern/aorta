@@ -76,8 +76,12 @@ impl FileOps {
                 exit_code,
                 duration,
             } => {
-                writeln!(file, "{}\x1F{}\x1F{}\x1F{}", command, timestamp, exit_code, duration)
-                    .map_err(HistoryError::IoError)?;
+                writeln!(
+                    file,
+                    "{}\x1F{}\x1F{}\x1F{}",
+                    command, timestamp, exit_code, duration
+                )
+                .map_err(HistoryError::IoError)?;
             }
             HistoryEntry::Event {
                 description,

@@ -5,7 +5,7 @@ use crate::highlight::SyntaxHighlighter;
 
 use rustyline::{
     completion::{Completer, Pair},
-    highlight::{Highlighter, CmdKind},
+    highlight::{CmdKind, Highlighter},
     hint::Hinter,
     validate::Validator,
     Context, Helper,

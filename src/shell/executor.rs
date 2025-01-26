@@ -1,7 +1,7 @@
+use super::environment::EnvironmentHandler;
 use super::pipeline::Pipeline;
 use crate::error::ShellError;
 use std::collections::HashMap;
-use super::environment::EnvironmentHandler;
 
 pub(crate) trait CommandHandler {
     fn execute_command(&mut self, command: &str) -> Result<(), ShellError>;

@@ -5,6 +5,12 @@ pub struct SyntaxHighlighter {
     color_support: ColorSupport,
 }
 
+impl Default for SyntaxHighlighter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SyntaxHighlighter {
     pub fn new() -> Self {
         let support = check_color_support().unwrap_or(ColorSupport::NoColor);
@@ -24,18 +30,13 @@ impl SyntaxHighlighter {
         }
 
         // Highlight command name in cyan
-        let command_style = Style::builder()
-            .foreground(Color::Cyan)
-            .bold()
-            .build();
+        let command_style = Style::builder().foreground(Color::Cyan).bold().build();
         parts[0] = parts[0].clone().style(command_style).to_string();
 
         // Highlight flags/options in yellow
         for i in 1..parts.len() {
             if parts[i].starts_with('-') {
-                let flag_style = Style::builder()
-                    .foreground(Color::Yellow)
-                    .build();
+                let flag_style = Style::builder().foreground(Color::Yellow).build();
                 parts[i] = parts[i].clone().style(flag_style).to_string();
             }
         }
@@ -48,11 +49,8 @@ impl SyntaxHighlighter {
             return error.to_string();
         }
 
-        let error_style = Style::builder()
-            .foreground(Color::Red)
-            .bold()
-            .build();
-        
+        let error_style = Style::builder().foreground(Color::Red).bold().build();
+
         error.style(error_style).to_string()
     }
 
@@ -61,10 +59,8 @@ impl SyntaxHighlighter {
             return message.to_string();
         }
 
-        let success_style = Style::builder()
-            .foreground(Color::Green)
-            .build();
-        
+        let success_style = Style::builder().foreground(Color::Green).build();
+
         message.style(success_style).to_string()
     }
 
@@ -76,7 +72,7 @@ impl SyntaxHighlighter {
         let hint_style = Style::builder()
             .foreground(Color::RGB(128, 128, 128))
             .build();
-        
+
         hint.style(hint_style).to_string()
     }
-} 
+}
