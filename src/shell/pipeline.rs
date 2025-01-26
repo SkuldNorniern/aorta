@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
-    io::{Read, Write},
     process::{Command, Stdio},
 };
 
@@ -59,6 +58,7 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self { stages: Vec::new() }
     }
@@ -290,6 +290,10 @@ impl Pipeline {
         Ok(())
     }
 
+    // Currently testing methods for expanding environment variables
+    // leaving this experimental expand_env_vars method for now
+    // FIX:TODO: Remove this once we have a proper way to expand environment variables
+    #[allow(dead_code)]
     fn expand_env_vars(&self, input: &str, env_vars: &HashMap<String, String>) -> String {
         let mut result = input.to_string();
 

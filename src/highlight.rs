@@ -34,10 +34,10 @@ impl SyntaxHighlighter {
         parts[0] = parts[0].clone().style(command_style).to_string();
 
         // Highlight flags/options in yellow
-        for i in 1..parts.len() {
-            if parts[i].starts_with('-') {
+        for part in parts.iter_mut().skip(1) {
+            if part.starts_with('-') {
                 let flag_style = Style::builder().foreground(Color::Yellow).build();
-                parts[i] = parts[i].clone().style(flag_style).to_string();
+                *part = part.clone().style(flag_style).to_string();
             }
         }
 

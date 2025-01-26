@@ -10,7 +10,7 @@ use crate::{
     core::{commands::CommandExecutor, config::Config},
     error::ShellError,
     flags::Flags,
-    input::{History, ShellCompleter, HistoryEntry},
+    input::{History, HistoryEntry, ShellCompleter},
 };
 
 use executor::CommandHandler;
