@@ -10,7 +10,7 @@ use crate::{
     core::{commands::CommandExecutor, config::Config},
     error::ShellError,
     flags::Flags,
-    input::{History, ShellCompleter},
+    input::{History, ShellCompleter, HistoryEntry},
 };
 
 use executor::CommandHandler;
@@ -49,7 +49,18 @@ impl Shell {
         let history_file = dirs::home_dir()
             .ok_or(ShellError::HomeDirNotFound)?
             .join(".aorta_history");
-        let history = History::new(history_file, 1000)?;
+        let history = History::new(history_file.clone(), 1000)?;
+
+        // Load history entries into editor
+        for entry in history.get_recent(1000).into_iter().rev() {
+            if let HistoryEntry::Command { command, .. } = entry {
+                if let Err(e) = editor.add_history_entry(command.as_ref()) {
+                    if !flags.is_set("quiet") {
+                        eprintln!("Warning: Failed to add history entry: {}", e);
+                    }
+                }
+            }
+        }
 
         // Set up ctrl-c handler
         ctrlc::set_handler(move || {
@@ -115,8 +126,7 @@ impl Shell {
     }
 
     fn register_as_shell(&self) -> Result<(), ShellError> {
-        let current_exe = env::current_exe()
-            .map_err(|e| ShellError::PathError(e.to_string()))?;
+        let current_exe = env::current_exe().map_err(|e| ShellError::PathError(e.to_string()))?;
         let shell_path = current_exe.to_string_lossy();
 
         // Check if the shell is in /etc/shells
@@ -130,8 +140,10 @@ impl Shell {
             println!("Registration allows using Aorta as your default shell.");
             println!("\nTo register manually, add this line to /etc/shells:");
             println!("{}", shell_path);
-            
-            print!("\nWould you like Aorta to attempt automatic registration? (requires sudo) [y/N]: ");
+
+            print!(
+                "\nWould you like Aorta to attempt automatic registration? (requires sudo) [y/N]: "
+            );
             io::stdout()
                 .flush()
                 .map_err(|e| ShellError::IoError(e.to_string()))?;
@@ -165,8 +177,7 @@ impl Shell {
             .map_err(|e| ShellError::ShellRegistrationError(e.to_string()))?;
 
         if let Some(ref mut stdin) = status.stdin {
-            writeln!(stdin, "{}", shell_path)
-                .map_err(|e| ShellError::IoError(e.to_string()))?;
+            writeln!(stdin, "{}", shell_path).map_err(|e| ShellError::IoError(e.to_string()))?;
         }
 
         // Wait for the command to complete
