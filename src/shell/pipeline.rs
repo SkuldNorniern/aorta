@@ -24,32 +24,32 @@ pub struct PipelineStage {
 
 #[derive(Debug)]
 pub enum PipelineError {
-    IoError(std::io::Error),
-    CommandError(CommandError),
-    ParseError(String),
-    ExecutionError(String),
+    Io(std::io::Error),
+    Command(CommandError),
+    Parse(String),
+    Execution(String),
 }
 
 impl std::fmt::Display for PipelineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::IoError(err) => write!(f, "IO error: {}", err),
-            Self::CommandError(err) => write!(f, "Command error: {}", err),
-            Self::ParseError(msg) => write!(f, "Parse error: {}", msg),
-            Self::ExecutionError(msg) => write!(f, "Execution error: {}", msg),
+            Self::Io(err) => write!(f, "IO error: {}", err),
+            Self::Command(err) => write!(f, "Command error: {}", err),
+            Self::Parse(msg) => write!(f, "Parse error: {}", msg),
+            Self::Execution(msg) => write!(f, "Execution error: {}", msg),
         }
     }
 }
 
 impl From<std::io::Error> for PipelineError {
     fn from(err: std::io::Error) -> Self {
-        PipelineError::IoError(err)
+        PipelineError::Io(err)
     }
 }
 
 impl From<CommandError> for PipelineError {
     fn from(err: CommandError) -> Self {
-        PipelineError::CommandError(err)
+        PipelineError::Command(err)
     }
 }
 
@@ -78,7 +78,7 @@ impl Pipeline {
                         // Check if there's any non-whitespace content after the pipe
                         let remaining: String = chars.clone().collect();
                         if remaining.trim().is_empty() {
-                            return Err(PipelineError::ParseError(
+                            return Err(PipelineError::Parse(
                                 "Incomplete pipeline: missing command after |".to_string(),
                             ));
                         }
@@ -95,7 +95,7 @@ impl Pipeline {
                                   // Check if there's any non-whitespace content after &&
                     let remaining: String = chars.clone().collect();
                     if remaining.trim().is_empty() {
-                        return Err(PipelineError::ParseError(
+                        return Err(PipelineError::Parse(
                             "Incomplete command: missing command after &&".to_string(),
                         ));
                     }
@@ -128,7 +128,7 @@ impl Pipeline {
         }
 
         if stages.is_empty() {
-            return Err(PipelineError::ParseError("Empty pipeline".to_string()));
+            return Err(PipelineError::Parse("Empty pipeline".to_string()));
         }
 
         Ok(Self { stages })
@@ -141,12 +141,12 @@ impl Pipeline {
     ) -> Result<(), PipelineError> {
         let trimmed = command_str.trim();
         if trimmed.is_empty() {
-            return Err(PipelineError::ParseError("Empty command".to_string()));
+            return Err(PipelineError::Parse("Empty command".to_string()));
         }
 
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
         if parts.is_empty() {
-            return Err(PipelineError::ParseError("Empty command".to_string()));
+            return Err(PipelineError::Parse("Empty command".to_string()));
         }
 
         stages.push(PipelineStage {
@@ -185,7 +185,7 @@ impl Pipeline {
                 Some(PipelineOperator::Pipe) => {
                     if command == "grep" {
                         if args.is_empty() {
-                            return Err(PipelineError::ExecutionError(
+                            return Err(PipelineError::Execution(
                                 "grep: no pattern specified".to_string(),
                             ));
                         }
@@ -210,7 +210,7 @@ impl Pipeline {
                         // Execute grep through executor
                         executor
                             .execute(&command, &grep_args)
-                            .map_err(|e| PipelineError::ExecutionError(e.to_string()))?;
+                            .map_err(|e| PipelineError::Execution(e.to_string()))?;
 
                         // Read the output if it exists
                         if let Ok(output) = std::fs::read(&temp_output) {
@@ -224,7 +224,7 @@ impl Pipeline {
 
                             let output = cmd
                                 .output()
-                                .map_err(|e| PipelineError::ExecutionError(e.to_string()))?;
+                                .map_err(|e| PipelineError::Execution(e.to_string()))?;
                             previous_output = Some(output.stdout);
                         }
 
@@ -240,7 +240,7 @@ impl Pipeline {
 
                         let output = cmd
                             .output()
-                            .map_err(|e| PipelineError::ExecutionError(e.to_string()))?;
+                            .map_err(|e| PipelineError::Execution(e.to_string()))?;
                         previous_output = Some(output.stdout);
                     }
                 }
@@ -250,7 +250,7 @@ impl Pipeline {
                 | None => {
                     executor
                         .execute(&command, &args)
-                        .map_err(|e| PipelineError::ExecutionError(e.to_string()))?;
+                        .map_err(|e| PipelineError::Execution(e.to_string()))?;
                     previous_output = None;
                 }
                 Some(PipelineOperator::Redirect) => {
@@ -265,12 +265,12 @@ impl Pipeline {
 
                             let output = cmd
                                 .output()
-                                .map_err(|e| PipelineError::ExecutionError(e.to_string()))?;
+                                .map_err(|e| PipelineError::Execution(e.to_string()))?;
                             std::fs::write(&next_stage.command, output.stdout)?;
                         }
                         break;
                     } else {
-                        return Err(PipelineError::ExecutionError(
+                        return Err(PipelineError::Execution(
                             "Redirect operator requires a file path".to_string(),
                         ));
                     }
