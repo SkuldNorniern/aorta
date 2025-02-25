@@ -4,7 +4,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use crate::core::commands::{CommandError, CommandExecutor};
+use crate::cmd::{CommandError, CommandExecutor};
 
 #[derive(Debug)]
 pub enum PipelineOperator {

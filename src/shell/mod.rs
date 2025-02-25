@@ -7,7 +7,8 @@ mod executor;
 pub(crate) mod pipeline;
 
 use crate::{
-    core::{commands::CommandExecutor, config::Config},
+    cmd::CommandExecutor,
+    core::config::Config,
     error::ShellError,
     flags::Flags,
     input::{History, HistoryEntry, ShellCompleter},

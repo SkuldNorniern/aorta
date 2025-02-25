@@ -5,7 +5,7 @@ mod env_vars;
 mod loader;
 mod paths;
 
-use super::commands::{CommandError, CommandExecutor};
+use crate::cmd::{CommandError, CommandExecutor};
 use aliases::AliasManager;
 use env_vars::EnvVarManager;
 use loader::ConfigLoader;

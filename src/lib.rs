@@ -3,6 +3,7 @@ pub mod flags;
 pub mod shell;
 
 pub mod core;
+pub mod cmd;
 pub mod highlight;
 pub mod input;
 pub mod path;

@@ -1,4 +1,4 @@
-use crate::core::commands::CommandError;
+use crate::cmd::CommandError;
 use crate::core::config::ConfigError;
 use crate::input::history::HistoryError;
 use crate::process::ProcessError;
