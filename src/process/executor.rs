@@ -1,7 +1,7 @@
 use std::process::{Command, Stdio};
 
 use super::{signal, ProcessError};
-use crate::flags::Flags;
+use crate::cli::Flags;
 use crate::path::PathExpander;
 
 #[derive(Clone)]

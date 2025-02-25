@@ -1,5 +1,5 @@
 pub mod error;
-pub mod flags;
+pub mod cli;
 pub mod shell;
 
 pub mod core;

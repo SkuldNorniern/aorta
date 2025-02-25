@@ -70,7 +70,7 @@ mod tests {
         fs::write(&test_file, content).unwrap();
         (
             test_file,
-            CommandExecutor::new(&crate::flags::Flags::default()).unwrap(),
+            CommandExecutor::new(&crate::cli::Flags::default()).unwrap(),
         )
     }
 
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn test_source_invalid_file() {
-        let executor = CommandExecutor::new(&crate::flags::Flags::default()).unwrap();
+        let executor = CommandExecutor::new(&crate::cli::Flags::default()).unwrap();
         let cmd = SourceCommand::new(executor);
 
         assert!(cmd.execute(&["/nonexistent/file".to_string()]).is_err());
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_source_empty_args() {
-        let executor = CommandExecutor::new(&crate::flags::Flags::default()).unwrap();
+        let executor = CommandExecutor::new(&crate::cli::Flags::default()).unwrap();
         let cmd = SourceCommand::new(executor);
 
         assert!(cmd.execute(&[]).is_err());

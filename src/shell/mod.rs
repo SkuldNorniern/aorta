@@ -10,7 +10,7 @@ use crate::{
     cmd::CommandExecutor,
     core::config::Config,
     error::ShellError,
-    flags::Flags,
+    cli::Flags,
     input::{History, HistoryEntry, ShellCompleter},
 };
 

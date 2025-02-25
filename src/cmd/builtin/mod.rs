@@ -20,7 +20,7 @@ use crate::core::env::EnvVarManager;
 use crate::input::history::HistoryError;
 use crate::input::History;
 use crate::process::{ProcessError, ProcessExecutor};
-
+use crate::cli::Flags;
 #[derive(Debug)]
 pub enum CommandError {
     NotFound(String),
@@ -91,7 +91,7 @@ pub struct CommandExecutor {
 }
 
 impl CommandExecutor {
-    pub fn new(flags: &crate::flags::Flags) -> Result<Self, CommandError> {
+    pub fn new(flags: &Flags) -> Result<Self, CommandError> {
         let mut executor = Self {
             commands: BTreeMap::new(),
             process_executor: ProcessExecutor::new(flags)?,
@@ -173,7 +173,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn setup_test_env() -> (CommandExecutor, PathBuf) {
-        let executor = CommandExecutor::new(&crate::flags::Flags::default()).unwrap();
+        let executor = CommandExecutor::new(&Flags::default()).unwrap();
         let temp_dir = env::temp_dir();
         (executor, temp_dir)
     }
