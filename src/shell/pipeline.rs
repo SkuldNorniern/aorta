@@ -9,11 +9,12 @@ use crate::core::commands::{CommandError, CommandExecutor};
 
 #[derive(Debug)]
 pub enum PipelineOperator {
-    Pipe,     // |
-    And,      // &&
-    Or,       // ||
-    Sequence, // ;
-    Redirect, // >
+    Pipe,        // |
+    And,         // &&
+    Or,          // ||
+    Sequence,    // ;
+    Redirect,    // >
+    RedirectIn,  // <
 }
 
 #[derive(Debug)]
@@ -129,6 +130,14 @@ impl Pipeline {
                     )?;
                     current_command.clear();
                 }
+                '<' => {
+                    Self::add_stage(
+                        &mut stages,
+                        &current_command,
+                        Some(PipelineOperator::RedirectIn),
+                    )?;
+                    current_command.clear();
+                }
                 _ => current_command.push(c),
             }
         }
@@ -176,110 +185,52 @@ impl Pipeline {
         executor: &CommandExecutor,
     ) -> Result<(), PipelineError> {
         let mut previous_output: Option<Vec<u8>> = None;
+        let mut last_success = true;
 
         for (index, stage) in self.stages.iter().enumerate() {
-            // First expand aliases and split into parts
-            let expanded_parts = if let Some(alias) = aliases.get(stage.command.as_str()) {
-                alias
-                    .split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<String>>()
-            } else {
-                vec![stage.command.clone()]
-            };
+            let (command, args) = Self::resolve_stage(stage, aliases);
 
-            let command = expanded_parts[0].clone();
-            let mut args = expanded_parts[1..].to_vec();
-            args.extend(stage.args.clone());
+            let prev_operator = index
+                .checked_sub(1)
+                .and_then(|i| self.stages.get(i))
+                .and_then(|s| s.operator.as_ref());
+            let skip = matches!(
+                (prev_operator, last_success),
+                (Some(PipelineOperator::And), false) | (Some(PipelineOperator::Or), true)
+            );
+            if skip {
+                continue;
+            }
 
-            match &stage.operator {
+            previous_output = match &stage.operator {
                 Some(PipelineOperator::Pipe) => {
-                    let mut cmd = Command::new(&command);
-                    cmd.args(&args)
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::inherit());
-
-                    if let Some(prev_out) = previous_output.take() {
-                        cmd.stdin(Stdio::piped());
-                        let mut child = cmd
-                            .spawn()
-                            .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                        if let Some(mut stdin) = child.stdin.take() {
-                            let _ = stdin.write_all(&prev_out);
-                        }
-                        let output = child
-                            .wait_with_output()
-                            .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                        previous_output = Some(output.stdout);
-                    } else {
-                        cmd.stdin(Stdio::inherit());
-                        let output = cmd
-                            .output()
-                            .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                        previous_output = Some(output.stdout);
-                    }
+                    Self::run_pipe_stage(&command, &args, previous_output)?
                 }
                 Some(PipelineOperator::And)
                 | Some(PipelineOperator::Or)
                 | Some(PipelineOperator::Sequence)
                 | None => {
-                    if let Some(prev_out) = previous_output.take() {
-                        if !executor.is_builtin(&command) {
-                            let mut cmd = Command::new(&command);
-                            cmd.args(&args)
-                                .stdin(Stdio::piped())
-                                .stdout(Stdio::piped())
-                                .stderr(Stdio::inherit());
-                            let mut child = cmd
-                                .spawn()
-                                .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                            if let Some(mut stdin) = child.stdin.take() {
-                                let _ = stdin.write_all(&prev_out);
-                            }
-                            let output = child
-                                .wait_with_output()
-                                .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                            if !output.stdout.is_empty() {
-                                let s = String::from_utf8_lossy(&output.stdout);
-                                print!("{}", s);
-                            }
-                        } else {
-                            executor
-                                .execute(&command, &args)
-                                .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                        }
-                    } else {
-                        executor
-                            .execute(&command, &args)
-                            .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                    }
+                    let (out, success) = Self::run_sequence_stage(
+                        &command,
+                        &args,
+                        previous_output,
+                        executor,
+                    )?;
+                    last_success = success;
+                    out
                 }
                 Some(PipelineOperator::Redirect) => {
-                    if let Some(next_stage) = self.stages.get(index + 1) {
-                        if let Some(output) = previous_output.take() {
-                            std::fs::write(&next_stage.command, output)?;
-                        } else {
-                            let mut cmd = Command::new(&command);
-                            cmd.args(&args)
-                                .stdout(Stdio::piped())
-                                .stderr(Stdio::inherit());
-
-                            let output = cmd
-                                .output()
-                                .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                            std::fs::write(&next_stage.command, output.stdout)?;
-                        }
-                        break;
-                    } else {
-                        return Err(PipelineError::Execution(
-                            "Redirect operator requires a file path".to_string(),
-                        ));
-                    }
+                    self.run_redirect_stage(index, &command, &args, previous_output)?;
+                    return Ok(());
                 }
-            }
+                Some(PipelineOperator::RedirectIn) => {
+                    let (out, success) = self.run_redirect_in_stage(index, &command, &args)?;
+                    last_success = success;
+                    out
+                }
+            };
         }
 
-        // Print remaining output if any
         if let Some(output) = previous_output {
             if !output.is_empty() {
                 if let Ok(s) = String::from_utf8(output) {
@@ -289,6 +240,151 @@ impl Pipeline {
         }
 
         Ok(())
+    }
+
+    fn resolve_stage(
+        stage: &PipelineStage,
+        aliases: &BTreeMap<Cow<'_, str>, Cow<'_, str>>,
+    ) -> (String, Vec<String>) {
+        let expanded_parts: Vec<String> = if let Some(alias) = aliases.get(stage.command.as_str()) {
+            alias.split_whitespace().map(String::from).collect()
+        } else {
+            vec![stage.command.clone()]
+        };
+        let command = expanded_parts[0].clone();
+        let mut args = expanded_parts[1..].to_vec();
+        args.extend(stage.args.clone());
+        (command, args)
+    }
+
+    fn run_pipe_stage(
+        command: &str,
+        args: &[String],
+        previous_output: Option<Vec<u8>>,
+    ) -> Result<Option<Vec<u8>>, PipelineError> {
+        let mut cmd = Command::new(command);
+        cmd.args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit());
+
+        let output = if let Some(prev_out) = previous_output {
+            cmd.stdin(Stdio::piped());
+            let mut child = cmd.spawn().map_err(|e| PipelineError::Execution(e.to_string()))?;
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(&prev_out);
+            }
+            child
+                .wait_with_output()
+                .map_err(|e| PipelineError::Execution(e.to_string()))?
+        } else {
+            cmd.stdin(Stdio::inherit());
+            cmd.output().map_err(|e| PipelineError::Execution(e.to_string()))?
+        };
+
+        Ok(Some(output.stdout))
+    }
+
+    fn run_sequence_stage(
+        command: &str,
+        args: &[String],
+        previous_output: Option<Vec<u8>>,
+        executor: &CommandExecutor,
+    ) -> Result<(Option<Vec<u8>>, bool), PipelineError> {
+        let success = if let Some(prev_out) = previous_output {
+            if !executor.is_builtin(command) {
+                let mut cmd = Command::new(command);
+                cmd.args(args)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::inherit());
+                let mut child = cmd.spawn().map_err(|e| PipelineError::Execution(e.to_string()))?;
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(&prev_out);
+                }
+                let output = child
+                    .wait_with_output()
+                    .map_err(|e| PipelineError::Execution(e.to_string()))?;
+                if !output.stdout.is_empty() {
+                    let s = String::from_utf8_lossy(&output.stdout);
+                    print!("{}", s);
+                }
+                output.status.success()
+            } else {
+                executor
+                    .execute_with_status(command, args)
+                    .map_err(|e| PipelineError::Execution(e.to_string()))?
+            }
+        } else {
+            executor
+                .execute_with_status(command, args)
+                .map_err(|e| PipelineError::Execution(e.to_string()))?
+        };
+        Ok((None, success))
+    }
+
+    fn run_redirect_stage(
+        &self,
+        index: usize,
+        command: &str,
+        args: &[String],
+        previous_output: Option<Vec<u8>>,
+    ) -> Result<(), PipelineError> {
+        let next_stage = self
+            .stages
+            .get(index + 1)
+            .ok_or_else(|| PipelineError::Execution("Redirect operator requires a file path".to_string()))?;
+
+        let output = if let Some(out) = previous_output {
+            out
+        } else {
+            let mut cmd = Command::new(command);
+            cmd.args(args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit());
+            let result = cmd.output().map_err(|e| PipelineError::Execution(e.to_string()))?;
+            result.stdout
+        };
+
+        std::fs::write(&next_stage.command, output)?;
+        Ok(())
+    }
+
+    fn run_redirect_in_stage(
+        &self,
+        index: usize,
+        command: &str,
+        args: &[String],
+    ) -> Result<(Option<Vec<u8>>, bool), PipelineError> {
+        let next_stage = self.stages.get(index + 1).ok_or_else(|| {
+            PipelineError::Execution("Redirect < requires a file path".to_string())
+        })?;
+        let path_str = next_stage.command.trim();
+        let file_path = if path_str.starts_with("~/") {
+            crate::path::home_dir()
+                .ok_or_else(|| PipelineError::Execution("HOME not set".to_string()))?
+                .join(path_str.trim_start_matches("~/"))
+        } else if path_str == "~" {
+            crate::path::home_dir()
+                .ok_or_else(|| PipelineError::Execution("HOME not set".to_string()))?
+        } else {
+            std::path::PathBuf::from(path_str)
+        };
+        let stdin_file = std::fs::File::open(&file_path)
+            .map_err(|e| PipelineError::Execution(e.to_string()))?;
+        let mut cmd = std::process::Command::new(command);
+        cmd.args(args)
+            .stdin(Stdio::from(stdin_file))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit());
+        let output = cmd
+            .output()
+            .map_err(|e| PipelineError::Execution(e.to_string()))?;
+        let success = output.status.success();
+        if !output.stdout.is_empty() {
+            let s = String::from_utf8_lossy(&output.stdout);
+            print!("{}", s);
+        }
+        Ok((None, success))
     }
 }
 
@@ -324,6 +420,12 @@ mod tests {
     #[test]
     fn test_parse_pipe_incomplete_fails() {
         assert!(Pipeline::parse("echo |").is_err());
+    }
+
+    #[test]
+    fn test_parse_redirect_in() {
+        let pipeline = Pipeline::parse("cat < file").unwrap();
+        assert_eq!(pipeline.stage_count(), 2);
     }
 
     #[test]
