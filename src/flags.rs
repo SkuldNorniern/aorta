@@ -85,6 +85,26 @@ impl Flags {
             },
         );
 
+        flags.insert(
+            "noprofile".to_string(),
+            Flag {
+                short: String::new(),
+                long: "--noprofile".to_string(),
+                description: "Do not load system or user profile".to_string(),
+                value: None,
+            },
+        );
+
+        flags.insert(
+            "norc".to_string(),
+            Flag {
+                short: String::new(),
+                long: "--norc".to_string(),
+                description: "Do not load .aortarc".to_string(),
+                value: None,
+            },
+        );
+
         Flags { flags }
     }
 
