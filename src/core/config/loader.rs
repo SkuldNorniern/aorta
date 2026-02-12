@@ -14,6 +14,27 @@ impl<'a> ConfigLoader<'a> {
     pub fn load_configs(&self, config: &mut Config) -> Result<(), ConfigError> {
         self.source_if_exists(&self.paths.profile_path, config)?;
         self.source_if_exists(&self.paths.rc_path, config)?;
+        self.source_custom_dir(config)?;
+        Ok(())
+    }
+
+    fn source_custom_dir(&self, config: &mut Config) -> Result<(), ConfigError> {
+        let custom_dir = self.paths.aorta_home.join("custom");
+        if !custom_dir.is_dir() {
+            return Ok(());
+        }
+        let mut entries: Vec<PathBuf> = fs::read_dir(&custom_dir)
+            .map_err(ConfigError::from)?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path().extension().is_some_and(|ext| ext == "aorta")
+            })
+            .map(|e| e.path())
+            .collect();
+        entries.sort();
+        for path in entries {
+            self.source_if_exists(&path, config)?;
+        }
         Ok(())
     }
 
@@ -314,6 +335,22 @@ mod tests {
         let mut config = setup_test_config();
         loader.process_theme("test", &mut config).unwrap();
         assert_eq!(env::var("AORTA_PROMPT").unwrap(), "test > ");
+        env::remove_var("AORTA_HOME");
+    }
+
+    #[test]
+    fn test_source_custom_dir() {
+        let temp = env::temp_dir().join("aorta_custom_test");
+        let _ = fs::create_dir_all(temp.join("custom"));
+        fs::write(temp.join("custom").join("mine.aorta"), "alias mc=echo custom")
+            .unwrap();
+        env::set_var("HOME", env::temp_dir());
+        env::set_var("AORTA_HOME", &temp);
+        let paths = ConfigPaths::new(None).unwrap();
+        let loader = ConfigLoader::new(&paths);
+        let mut config = setup_test_config();
+        loader.load_configs(&mut config).unwrap();
+        assert_eq!(config.get_alias("mc").unwrap(), "echo custom");
         env::remove_var("AORTA_HOME");
     }
 
