@@ -126,9 +126,14 @@ impl Shell {
         } else {
             self.current_dir.clone()
         };
+        let user = env::var("USER").unwrap_or_else(|_| "?".to_string());
+        let host = env::var("HOSTNAME").unwrap_or_else(|_| "?".to_string());
+
         if let Ok(fmt) = env::var("AORTA_PROMPT") {
             fmt.replace("%c", &self.current_dir)
                 .replace("%~", &cwd)
+                .replace("%u", &user)
+                .replace("%h", &host)
         } else {
             format!("{} > ", cwd)
         }
