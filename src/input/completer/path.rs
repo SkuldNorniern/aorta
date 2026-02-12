@@ -130,3 +130,22 @@ impl PathCompleter {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_complete_path_current_dir() {
+        let completer = PathCompleter::new();
+        let matches = completer.complete_path(".");
+        let _ = matches;
+    }
+
+    #[test]
+    fn test_complete_path_empty() {
+        let completer = PathCompleter::new();
+        let matches = completer.complete_path("");
+        let _ = matches;
+    }
+}

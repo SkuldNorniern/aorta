@@ -98,3 +98,24 @@ impl Completer for ShellCompleter {
         Ok((start, matches))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::borrow::Cow;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_shell_completer_new() {
+        let completer = ShellCompleter::new();
+        assert!(std::mem::size_of_val(&completer) > 0);
+    }
+
+    #[test]
+    fn test_shell_completer_update_aliases() {
+        let mut completer = ShellCompleter::new();
+        let mut aliases = BTreeMap::new();
+        aliases.insert(Cow::Borrowed("ll"), Cow::Borrowed("ls -la"));
+        completer.update_aliases(aliases);
+    }
+}

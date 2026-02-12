@@ -86,3 +86,24 @@ impl CommandCompleter {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_complete_command_builtins() {
+        let completer = CommandCompleter::new();
+        let matches = completer.complete_command("cd");
+        assert!(matches.iter().any(|p| p.replacement == "cd"));
+        let matches = completer.complete_command("ex");
+        assert!(matches.iter().any(|p| p.replacement == "exit"));
+    }
+
+    #[test]
+    fn test_complete_command_empty() {
+        let completer = CommandCompleter::new();
+        let matches = completer.complete_command("");
+        assert!(matches.len() >= 2);
+    }
+}
