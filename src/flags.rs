@@ -75,6 +75,16 @@ impl Flags {
             },
         );
 
+        flags.insert(
+            "skip-register".to_string(),
+            Flag {
+                short: "-S".to_string(),
+                long: "--skip-register".to_string(),
+                description: "Skip shell registration check (for scripting/testing)".to_string(),
+                value: None,
+            },
+        );
+
         Flags { flags }
     }
 
@@ -124,5 +134,48 @@ impl Flags {
         for flag in self.flags.values() {
             println!("  {}, {:<15} {}", flag.short, flag.long, flag.description);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_flags_default() {
+        let flags = Flags::default();
+        assert!(!flags.is_set("help"));
+    }
+
+    #[test]
+    fn test_flags_parse_short() -> Result<(), ShellError> {
+        let mut flags = Flags::new();
+        flags.parse(&["-h".to_string()])?;
+        assert!(flags.is_set("help"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_flags_parse_config_requires_value() {
+        let mut flags = Flags::new();
+        let result = flags.parse(&["-c".to_string()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_flags_parse_config_with_value() -> Result<(), ShellError> {
+        let mut flags = Flags::new();
+        flags.parse(&["-c".to_string(), "/path/to/config".to_string()])?;
+        assert!(flags.is_set("config"));
+        assert_eq!(flags.get_value("config"), Some(&"/path/to/config".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_flags_skip_register() -> Result<(), ShellError> {
+        let mut flags = Flags::new();
+        flags.parse(&["--skip-register".to_string()])?;
+        assert!(flags.is_set("skip-register"));
+        Ok(())
     }
 }

@@ -75,3 +75,23 @@ impl CommandExecutor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_process_executor_new() -> Result<(), ProcessError> {
+        let flags = crate::flags::Flags::default();
+        let executor = CommandExecutor::new(&flags)?;
+        assert!(!executor.quiet_mode);
+        Ok(())
+    }
+
+    #[test]
+    fn test_spawn_true() -> Result<(), ProcessError> {
+        let executor = CommandExecutor::new(&crate::flags::Flags::default())?;
+        executor.spawn_process(&["true"])?;
+        Ok(())
+    }
+}

@@ -96,3 +96,16 @@ impl std::fmt::Display for ShellError {
 }
 
 impl std::error::Error for ShellError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shell_error_display() {
+        assert!(!ShellError::HomeDirNotFound.to_string().is_empty());
+        assert!(ShellError::HomeDirNotFound.to_string().contains("Home"));
+        assert!(ShellError::CommandNotFound("ls".to_string()).to_string().contains("ls"));
+        assert!(ShellError::PathError("bad path".to_string()).to_string().contains("bad path"));
+    }
+}
