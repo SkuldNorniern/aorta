@@ -1,14 +1,22 @@
+use nix::sys::signal::{self, SigHandler, Signal};
+
 use crate::process::ProcessError;
-
-use libc::{sighandler_t, signal, SIGINT};
-
-pub extern "C" fn handle_sigint(_: i32) {
-    // Do nothing, let the child process handle the signal
-}
 
 pub fn setup_signal_handlers() -> Result<(), ProcessError> {
     unsafe {
-        signal(SIGINT, handle_sigint as sighandler_t);
+        signal::signal(Signal::SIGINT, SigHandler::SigIgn)
+            .map_err(|e| ProcessError::SignalError(e.to_string()))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_setup_signal_handlers() -> Result<(), ProcessError> {
+        setup_signal_handlers()?;
+        Ok(())
+    }
 }
