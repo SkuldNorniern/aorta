@@ -38,6 +38,7 @@ fn display_motd() -> io::Result<()> {
     })?;
 
     let candidates = [
+        std::path::PathBuf::from("/etc/aorta/motd"),
         home.join(".aorta_motd"),
         home.join(".motd"),
     ];
