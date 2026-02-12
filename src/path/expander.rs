@@ -1,4 +1,5 @@
 use crate::error::ShellError;
+use crate::path;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
@@ -24,15 +25,15 @@ impl PathExpander {
     }
 
     fn expand_tilde(&self, path: &str) -> Result<PathBuf, ShellError> {
-        let home_dir = dirs::home_dir().ok_or(ShellError::HomeDirNotFound)?;
+        let home = path::home_dir().ok_or(ShellError::HomeDirNotFound)?;
 
         match path {
-            "~" => Ok(home_dir),
+            "~" => Ok(home),
             path if path.starts_with("~/") => {
-                let remainder = &path[2..]; // Skip "~/"
-                Ok(home_dir.join(remainder))
+                let remainder = &path[2..];
+                Ok(home.join(remainder))
             }
-            _ => Ok(Path::new(path).to_path_buf()), // For other cases like ~user
+            _ => Ok(Path::new(path).to_path_buf()),
         }
     }
 
@@ -41,18 +42,19 @@ impl PathExpander {
     }
 
     pub fn get_home_dir(&self) -> Result<PathBuf, ShellError> {
-        dirs::home_dir().ok_or(ShellError::HomeDirNotFound)
+        path::home_dir().ok_or(ShellError::HomeDirNotFound)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::path;
 
     #[test]
     fn test_expand_tilde() {
         let expander = PathExpander::new();
-        let home = dirs::home_dir().unwrap();
+        let home = path::home_dir().expect("HOME env var required for test");
 
         // Test single tilde
         assert_eq!(expander.expand("~").unwrap(), home);

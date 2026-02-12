@@ -11,9 +11,7 @@ pub struct EnvPaths {
 
 impl EnvPaths {
     pub fn new() -> Result<Self, EnvError> {
-        let home = std::env::var("HOME")
-            .map(PathBuf::from)
-            .map_err(|_| EnvError::HomeDirNotFound)?;
+        let home = crate::path::home_dir().ok_or(EnvError::HomeDirNotFound)?;
 
         if !home.exists() {
             return Err(EnvError::InvalidPath(home));
