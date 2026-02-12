@@ -57,3 +57,16 @@ impl CommandHandler for super::Shell {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::shell::environment::expand_env_vars_with;
+
+    #[test]
+    fn test_expand_integration() {
+        std::env::set_var("EXEC_TEST_VAR", "value");
+        let result = expand_env_vars_with("echo $EXEC_TEST_VAR", |n| std::env::var(n).ok());
+        std::env::remove_var("EXEC_TEST_VAR");
+        assert_eq!(result, "echo value");
+    }
+}

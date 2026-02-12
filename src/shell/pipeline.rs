@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
+    io::Write,
     process::{Command, Stdio},
 };
 
@@ -61,6 +62,16 @@ impl Pipeline {
     #[allow(dead_code)]
     pub fn new() -> Self {
         Self { stages: Vec::new() }
+    }
+
+    #[cfg(test)]
+    pub fn stage_count(&self) -> usize {
+        self.stages.len()
+    }
+
+    #[cfg(test)]
+    pub fn first_command(&self) -> Option<&str> {
+        self.stages.first().map(|s| s.command.as_str())
     }
 
     pub fn parse(input: &str) -> Result<Self, PipelineError> {
@@ -183,61 +194,25 @@ impl Pipeline {
 
             match &stage.operator {
                 Some(PipelineOperator::Pipe) => {
-                    if command == "grep" {
-                        if args.is_empty() {
-                            return Err(PipelineError::Execution(
-                                "grep: no pattern specified".to_string(),
-                            ));
-                        }
+                    let mut cmd = Command::new(&command);
+                    cmd.args(&args)
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::inherit());
 
-                        // Create a temp file for grep input
-                        let temp_input = format!("/tmp/aorta_input_{}", std::process::id());
-
-                        // Write previous output or empty string to temp file
-                        if let Some(prev_out) = previous_output.take() {
-                            std::fs::write(&temp_input, prev_out)?;
-                        } else {
-                            std::fs::write(&temp_input, "")?;
-                        }
-
-                        // Create a temp file for grep output
-                        let temp_output = format!("/tmp/aorta_output_{}", std::process::id());
-
-                        // Keep the pattern and any options, add temp file as last argument
-                        let mut grep_args = args;
-                        grep_args.push(temp_input.clone());
-
-                        // Execute grep through executor
-                        executor
-                            .execute(&command, &grep_args)
+                    if let Some(prev_out) = previous_output.take() {
+                        cmd.stdin(Stdio::piped());
+                        let mut child = cmd
+                            .spawn()
                             .map_err(|e| PipelineError::Execution(e.to_string()))?;
-
-                        // Read the output if it exists
-                        if let Ok(output) = std::fs::read(&temp_output) {
-                            previous_output = Some(output);
-                        } else {
-                            // If no output file, try reading from stdout capture
-                            let mut cmd = Command::new("grep");
-                            cmd.args(&grep_args)
-                                .stdout(Stdio::piped())
-                                .stderr(Stdio::inherit());
-
-                            let output = cmd
-                                .output()
-                                .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                            previous_output = Some(output.stdout);
+                        if let Some(mut stdin) = child.stdin.take() {
+                            let _ = stdin.write_all(&prev_out);
                         }
-
-                        // Clean up temp files
-                        let _ = std::fs::remove_file(temp_input);
-                        let _ = std::fs::remove_file(temp_output);
+                        let output = child
+                            .wait_with_output()
+                            .map_err(|e| PipelineError::Execution(e.to_string()))?;
+                        previous_output = Some(output.stdout);
                     } else {
-                        // For other commands (including ls)
-                        let mut cmd = Command::new(&command);
-                        cmd.args(&args)
-                            .stdout(Stdio::piped())
-                            .stderr(Stdio::inherit());
-
+                        cmd.stdin(Stdio::inherit());
                         let output = cmd
                             .output()
                             .map_err(|e| PipelineError::Execution(e.to_string()))?;
@@ -248,10 +223,36 @@ impl Pipeline {
                 | Some(PipelineOperator::Or)
                 | Some(PipelineOperator::Sequence)
                 | None => {
-                    executor
-                        .execute(&command, &args)
-                        .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                    previous_output = None;
+                    if let Some(prev_out) = previous_output.take() {
+                        if !executor.is_builtin(&command) {
+                            let mut cmd = Command::new(&command);
+                            cmd.args(&args)
+                                .stdin(Stdio::piped())
+                                .stdout(Stdio::piped())
+                                .stderr(Stdio::inherit());
+                            let mut child = cmd
+                                .spawn()
+                                .map_err(|e| PipelineError::Execution(e.to_string()))?;
+                            if let Some(mut stdin) = child.stdin.take() {
+                                let _ = stdin.write_all(&prev_out);
+                            }
+                            let output = child
+                                .wait_with_output()
+                                .map_err(|e| PipelineError::Execution(e.to_string()))?;
+                            if !output.stdout.is_empty() {
+                                let s = String::from_utf8_lossy(&output.stdout);
+                                print!("{}", s);
+                            }
+                        } else {
+                            executor
+                                .execute(&command, &args)
+                                .map_err(|e| PipelineError::Execution(e.to_string()))?;
+                        }
+                    } else {
+                        executor
+                            .execute(&command, &args)
+                            .map_err(|e| PipelineError::Execution(e.to_string()))?;
+                    }
                 }
                 Some(PipelineOperator::Redirect) => {
                     if let Some(next_stage) = self.stages.get(index + 1) {
@@ -289,36 +290,45 @@ impl Pipeline {
 
         Ok(())
     }
+}
 
-    // Currently testing methods for expanding environment variables
-    // leaving this experimental expand_env_vars method for now
-    // FIX:TODO: Remove this once we have a proper way to expand environment variables
-    #[allow(dead_code)]
-    fn expand_env_vars(&self, input: &str, env_vars: &HashMap<String, String>) -> String {
-        let mut result = input.to_string();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        // Handle $VAR style variables
-        while let Some(dollar_pos) = result.find('$') {
-            if dollar_pos + 1 >= result.len() {
-                break;
-            }
+    #[test]
+    fn test_parse_simple_command() {
+        let pipeline = Pipeline::parse("echo hello").unwrap();
+        assert_eq!(pipeline.stage_count(), 1);
+        assert_eq!(pipeline.first_command(), Some("echo"));
+    }
 
-            // Find the end of the variable name
-            let var_end = result[dollar_pos + 1..]
-                .find(|c: char| !c.is_alphanumeric() && c != '_')
-                .map_or(result.len(), |pos| pos + dollar_pos + 1);
+    #[test]
+    fn test_parse_sequence() {
+        let pipeline = Pipeline::parse("cmd1 ; cmd2").unwrap();
+        assert_eq!(pipeline.stage_count(), 2);
+    }
 
-            let var_name = &result[dollar_pos + 1..var_end];
+    #[test]
+    fn test_parse_pipe() {
+        let pipeline = Pipeline::parse("echo hi | cat").unwrap();
+        assert_eq!(pipeline.stage_count(), 2);
+        assert_eq!(pipeline.first_command(), Some("echo"));
+    }
 
-            // Get the value from environment
-            if let Some(value) = env_vars.get(var_name) {
-                result.replace_range(dollar_pos..var_end, value);
-            } else {
-                // If variable not found, replace with empty string
-                result.replace_range(dollar_pos..var_end, "");
-            }
-        }
+    #[test]
+    fn test_parse_empty_fails() {
+        assert!(Pipeline::parse("").is_err());
+    }
 
-        result
+    #[test]
+    fn test_parse_pipe_incomplete_fails() {
+        assert!(Pipeline::parse("echo |").is_err());
+    }
+
+    #[test]
+    fn test_pipeline_error_display() {
+        let err = PipelineError::Parse("test".to_string());
+        assert!(!err.to_string().is_empty());
     }
 }

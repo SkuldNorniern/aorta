@@ -1,29 +1,113 @@
+pub(crate) fn expand_env_vars_with<F>(input: &str, lookup: F) -> String
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let mut result = input.to_string();
+
+    while let Some(dollar_pos) = result.find('$') {
+        if dollar_pos + 1 >= result.len() {
+            break;
+        }
+
+        let (var_name, consumed_len, default_val) = if result.as_bytes()[dollar_pos + 1] == b'{' {
+            parse_braced_var(&result[dollar_pos + 2..])
+        } else {
+            parse_simple_var(&result[dollar_pos + 1..])
+        };
+
+        let replace_end = dollar_pos + 1 + consumed_len;
+        let value = match (lookup(var_name), default_val) {
+            (Some(v), _) if !v.is_empty() => v,
+            (_, Some(d)) => d.to_string(),
+            _ => String::new(),
+        };
+        result.replace_range(dollar_pos..replace_end, &value);
+    }
+
+    result
+}
+
+fn parse_simple_var(rest: &str) -> (&str, usize, Option<&str>) {
+    let var_end = rest
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .unwrap_or(rest.len());
+    let var_name = &rest[..var_end];
+    (var_name, var_end, None)
+}
+
+fn parse_braced_var(rest: &str) -> (&str, usize, Option<&str>) {
+    if let Some(close_brace) = rest.find('}') {
+        let inner = &rest[..close_brace];
+        let consumed = 2 + close_brace;
+        if let Some(colon_dash) = inner.find(":-") {
+            let var_name = inner[..colon_dash].trim();
+            let default_val = &inner[colon_dash + 2..];
+            return (var_name, consumed, Some(default_val));
+        }
+        let var_name = inner.trim();
+        return (var_name, consumed, None);
+    }
+    ("", 0, None)
+}
+
 pub(crate) trait EnvironmentHandler {
     fn expand_env_vars(&self, input: &str) -> String;
 }
 
 impl EnvironmentHandler for super::Shell {
     fn expand_env_vars(&self, input: &str) -> String {
-        let mut result = input.to_string();
+        expand_env_vars_with(input, |name| std::env::var(name).ok())
+    }
+}
 
-        while let Some(dollar_pos) = result.find('$') {
-            if dollar_pos + 1 >= result.len() {
-                break;
-            }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-            let var_end = result[dollar_pos + 1..]
-                .find(|c: char| !c.is_alphanumeric() && c != '_')
-                .map_or(result.len(), |pos| pos + dollar_pos + 1);
-
-            let var_name = &result[dollar_pos + 1..var_end];
-
-            if let Ok(value) = std::env::var(var_name) {
-                result.replace_range(dollar_pos..var_end, &value);
+    #[test]
+    fn test_expand_env_vars_basic() {
+        let lookup = |s: &str| -> Option<String> {
+            if s == "FOO" {
+                Some("bar".into())
+            } else if s == "EMPTY" {
+                Some(String::new())
             } else {
-                result.replace_range(dollar_pos..var_end, "");
+                None
             }
-        }
+        };
+        assert_eq!(expand_env_vars_with("x$FOO y", lookup), "xbar y");
+        assert_eq!(expand_env_vars_with("$EMPTY", lookup), "");
+        assert_eq!(expand_env_vars_with("$MISSING", lookup), "");
+        assert_eq!(expand_env_vars_with("no vars", lookup), "no vars");
+    }
 
-        result
+    #[test]
+    fn test_expand_env_vars_with_env() {
+        std::env::set_var("AORTA_TEST_EXPAND", "expanded");
+        let result = expand_env_vars_with("test_$AORTA_TEST_EXPAND_end", |n| std::env::var(n).ok());
+        std::env::remove_var("AORTA_TEST_EXPAND");
+        assert_eq!(result, "test_expanded_end");
+    }
+
+    #[test]
+    fn test_expand_braced_var() {
+        let lookup = |s: &str| if s == "X" { Some("val".into()) } else { None };
+        assert_eq!(expand_env_vars_with("a${X}b", lookup), "avalb");
+        assert_eq!(expand_env_vars_with("${X}_suffix", lookup), "val_suffix");
+    }
+
+    #[test]
+    fn test_expand_default_value() {
+        let lookup = |s: &str| if s == "SET" { Some("yes".into()) } else { None };
+        assert_eq!(
+            expand_env_vars_with("${SET:-no} ${UNSET:-default}", lookup),
+            "yes default"
+        );
+        assert_eq!(
+            expand_env_vars_with("${EMPTY:-fallback}", |s| {
+                if s == "EMPTY" { Some(String::new()) } else { None }
+            }),
+            "fallback"
+        );
     }
 }

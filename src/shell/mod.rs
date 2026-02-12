@@ -35,23 +35,20 @@ impl Shell {
 
         let current_dir = env::current_dir()?.to_string_lossy().to_string();
 
-        // Load config and executor
         let executor = CommandExecutor::new(&flags)?;
-        let mut config = Config::new()?.with_executor(executor);
+        let config_path = flags.get_value("config").map(|s| s.as_str());
+        let mut config = Config::new(config_path)?.with_executor(executor.clone());
         config.load()?;
 
-        // After loading config, update the current process environment
         if let Some(path) = env::var_os("PATH") {
             env::set_var("PATH", path.clone());
         }
 
-        // Set up history
-        let history_file = dirs::home_dir()
+        let history_file = crate::path::home_dir()
             .ok_or(ShellError::HomeDirNotFound)?
             .join(".aorta_history");
         let history = History::new(history_file.clone(), 1000)?;
 
-        // Load history entries into editor
         for entry in history.get_recent(1000).into_iter().rev() {
             if let HistoryEntry::Command { command, .. } = entry {
                 if let Err(e) = editor.add_history_entry(command.as_ref()) {
@@ -62,12 +59,7 @@ impl Shell {
             }
         }
 
-        // Set up ctrl-c handler
-        ctrlc::set_handler(move || {
-            // println!("\nUse 'exit' to exit the shell");
-        })?;
-
-        let executor = CommandExecutor::new(&flags)?;
+        ctrlc::set_handler(move || {})?;
 
         Ok(Shell {
             editor,
@@ -87,7 +79,7 @@ impl Shell {
 
         // Implement the command loop here instead of calling run_command_loop
         loop {
-            let prompt = format!("{} > ", self.current_dir);
+            let prompt = self.format_prompt();
             match self.editor.readline(&prompt) {
                 Ok(line) => {
                     if let Err(e) = self.editor.add_history_entry(line.as_str()) {
@@ -125,7 +117,28 @@ impl Shell {
         Ok(())
     }
 
+    fn format_prompt(&self) -> String {
+        let home_abbrev = crate::path::home_dir()
+            .and_then(|h| h.to_str().map(|s| s.to_string()))
+            .unwrap_or_default();
+        let cwd = if !home_abbrev.is_empty() && self.current_dir.starts_with(&home_abbrev) {
+            format!("~{}", &self.current_dir[home_abbrev.len()..])
+        } else {
+            self.current_dir.clone()
+        };
+        if let Ok(fmt) = env::var("AORTA_PROMPT") {
+            fmt.replace("%c", &self.current_dir)
+                .replace("%~", &cwd)
+        } else {
+            format!("{} > ", cwd)
+        }
+    }
+
     fn register_as_shell(&self) -> Result<(), ShellError> {
+        if self.flags.is_set("skip-register") {
+            return Ok(());
+        }
+
         let current_exe = env::current_exe().map_err(|e| ShellError::PathError(e.to_string()))?;
         let shell_path = current_exe.to_string_lossy();
 
@@ -192,5 +205,22 @@ impl Shell {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shell_new_fails_without_home() {
+        let saved = env::var_os("HOME");
+        env::remove_var("HOME");
+        let flags = crate::flags::Flags::default();
+        let result = Shell::new(flags);
+        if let Some(h) = saved {
+            env::set_var("HOME", h);
+        }
+        assert!(result.is_err());
     }
 }
