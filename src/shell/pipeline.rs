@@ -9,13 +9,15 @@ use crate::core::commands::{CommandError, CommandExecutor};
 
 #[derive(Debug)]
 pub enum PipelineOperator {
-    Pipe,           // |
-    And,            // &&
-    Or,             // ||
-    Sequence,       // ;
-    Redirect,       // >
-    RedirectStderr, // 2>
-    RedirectIn,     // <
+    Pipe,                // |
+    And,                 // &&
+    Or,                  // ||
+    Sequence,            // ;
+    Redirect,            // >
+    RedirectAppend,      // >>
+    RedirectStderr,      // 2>
+    RedirectStderrAppend, // 2>>
+    RedirectIn,          // <
 }
 
 #[derive(Debug)]
@@ -23,6 +25,7 @@ pub struct PipelineStage {
     pub command: String,
     pub args: Vec<String>,
     pub operator: Option<PipelineOperator>,
+    pub stderr_to_stdout: bool,
 }
 
 #[derive(Debug)]
@@ -85,34 +88,40 @@ impl Pipeline {
             match c {
                 '|' => {
                     if chars.peek() == Some(&'|') {
-                        chars.next(); // consume second '|'
+                        chars.next();
                         Self::add_stage(&mut stages, &current_command, Some(PipelineOperator::Or))?;
                     } else {
-                        // Check if there's any non-whitespace content after the pipe
                         let remaining: String = chars.clone().collect();
                         if remaining.trim().is_empty() {
                             return Err(PipelineError::Parse(
                                 "Incomplete pipeline: missing command after |".to_string(),
                             ));
                         }
-                        Self::add_stage(
-                            &mut stages,
-                            &current_command,
-                            Some(PipelineOperator::Pipe),
-                        )?;
+                        if current_command.trim().is_empty() {
+                            if let Some(last) = stages.last_mut() {
+                                last.operator = Some(PipelineOperator::Pipe);
+                            }
+                        } else {
+                            Self::add_stage(&mut stages, &current_command, Some(PipelineOperator::Pipe))?;
+                        }
                     }
                     current_command.clear();
                 }
                 '&' if chars.peek() == Some(&'&') => {
-                    chars.next(); // consume second '&'
-                                  // Check if there's any non-whitespace content after &&
+                    chars.next();
                     let remaining: String = chars.clone().collect();
                     if remaining.trim().is_empty() {
                         return Err(PipelineError::Parse(
                             "Incomplete command: missing command after &&".to_string(),
                         ));
                     }
-                    Self::add_stage(&mut stages, &current_command, Some(PipelineOperator::And))?;
+                    if current_command.trim().is_empty() {
+                        if let Some(last) = stages.last_mut() {
+                            last.operator = Some(PipelineOperator::And);
+                        }
+                    } else {
+                        Self::add_stage(&mut stages, &current_command, Some(PipelineOperator::And))?;
+                    }
                     current_command.clear();
                 }
                 ';' => {
@@ -124,14 +133,46 @@ impl Pipeline {
                     current_command.clear();
                 }
                 '>' => {
-                    let (cmd, op) = if current_command.trim_end().ends_with(" 2") {
+                    let is_append = chars.peek() == Some(&'>');
+                    if is_append {
+                        chars.next();
+                    }
+                    let (cmd, op, stderr_to_stdout) = if current_command.trim_end().ends_with(" 2") {
                         let t = current_command.trim_end();
                         let cmd_part = t[..t.len().saturating_sub(2)].trim_end();
-                        (cmd_part.to_string(), PipelineOperator::RedirectStderr)
+                        while chars.peek().map_or(false, |c| c.is_ascii_whitespace()) {
+                            chars.next();
+                        }
+                        let is_2_to_1 = chars.peek() == Some(&'&') && {
+                            let mut it = chars.clone();
+                            it.next();
+                            it.next() == Some('1')
+                        };
+                        if is_2_to_1 {
+                            chars.next();
+                            chars.next();
+                            (
+                                cmd_part.to_string(),
+                                None,
+                                true,
+                            )
+                        } else {
+                            let op = if is_append {
+                                PipelineOperator::RedirectStderrAppend
+                            } else {
+                                PipelineOperator::RedirectStderr
+                            };
+                            (cmd_part.to_string(), Some(op), false)
+                        }
                     } else {
-                        (current_command.clone(), PipelineOperator::Redirect)
+                        let op = if is_append {
+                            PipelineOperator::RedirectAppend
+                        } else {
+                            PipelineOperator::Redirect
+                        };
+                        (current_command.clone(), Some(op), false)
                     };
-                    Self::add_stage(&mut stages, &cmd, Some(op))?;
+                    Self::add_stage_with_modifier(&mut stages, &cmd, op, stderr_to_stdout)?;
                     current_command.clear();
                 }
                 '<' => {
@@ -163,6 +204,15 @@ impl Pipeline {
         command_str: &str,
         operator: Option<PipelineOperator>,
     ) -> Result<(), PipelineError> {
+        Self::add_stage_with_modifier(stages, command_str, operator, false)
+    }
+
+    fn add_stage_with_modifier(
+        stages: &mut Vec<PipelineStage>,
+        command_str: &str,
+        operator: Option<PipelineOperator>,
+        stderr_to_stdout: bool,
+    ) -> Result<(), PipelineError> {
         let trimmed = command_str.trim();
         if trimmed.is_empty() {
             return Err(PipelineError::Parse("Empty command".to_string()));
@@ -177,6 +227,7 @@ impl Pipeline {
             command: parts[0].to_string(),
             args: parts[1..].iter().map(|s| s.to_string()).collect(),
             operator,
+            stderr_to_stdout,
         });
 
         Ok(())
@@ -208,7 +259,12 @@ impl Pipeline {
 
             previous_output = match &stage.operator {
                 Some(PipelineOperator::Pipe) => {
-                    Self::run_pipe_stage(&command, &args, previous_output)?
+                    Self::run_pipe_stage(
+                        &command,
+                        &args,
+                        previous_output,
+                        stage.stderr_to_stdout,
+                    )?
                 }
                 Some(PipelineOperator::And)
                 | Some(PipelineOperator::Or)
@@ -219,16 +275,25 @@ impl Pipeline {
                         &args,
                         previous_output,
                         executor,
+                        stage.stderr_to_stdout,
                     )?;
                     last_success = success;
                     out
                 }
                 Some(PipelineOperator::Redirect) => {
-                    self.run_redirect_stage(index, &command, &args, previous_output)?;
+                    self.run_redirect_stage(index, &command, &args, previous_output, false)?;
+                    return Ok(());
+                }
+                Some(PipelineOperator::RedirectAppend) => {
+                    self.run_redirect_stage(index, &command, &args, previous_output, true)?;
                     return Ok(());
                 }
                 Some(PipelineOperator::RedirectStderr) => {
-                    self.run_redirect_stderr_stage(index, &command, &args, previous_output)?;
+                    self.run_redirect_stderr_stage(index, &command, &args, previous_output, false)?;
+                    return Ok(());
+                }
+                Some(PipelineOperator::RedirectStderrAppend) => {
+                    self.run_redirect_stderr_stage(index, &command, &args, previous_output, true)?;
                     return Ok(());
                 }
                 Some(PipelineOperator::RedirectIn) => {
@@ -262,18 +327,44 @@ impl Pipeline {
         let command = expanded_parts[0].clone();
         let mut args = expanded_parts[1..].to_vec();
         args.extend(stage.args.clone());
+        let args = Self::expand_glob_args(&args);
         (command, args)
+    }
+
+    fn expand_glob_args(args: &[String]) -> Vec<String> {
+        let mut result = Vec::new();
+        for arg in args {
+            if arg.contains('*') || arg.contains('?') {
+                match crate::path::expand_glob(arg) {
+                    Ok(matches) => {
+                        for p in matches {
+                            if let Some(s) = p.to_str() {
+                                result.push(s.to_string());
+                            }
+                        }
+                    }
+                    Err(_) => result.push(arg.clone()),
+                }
+            } else {
+                result.push(arg.clone());
+            }
+        }
+        result
     }
 
     fn run_pipe_stage(
         command: &str,
         args: &[String],
         previous_output: Option<Vec<u8>>,
+        stderr_to_stdout: bool,
     ) -> Result<Option<Vec<u8>>, PipelineError> {
         let mut cmd = Command::new(command);
-        cmd.args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+        cmd.args(args).stdout(Stdio::piped());
+        if stderr_to_stdout {
+            cmd.stderr(Stdio::piped());
+        } else {
+            cmd.stderr(Stdio::inherit());
+        }
 
         let output = if let Some(prev_out) = previous_output {
             cmd.stdin(Stdio::piped());
@@ -289,7 +380,12 @@ impl Pipeline {
             cmd.output().map_err(|e| PipelineError::Execution(e.to_string()))?
         };
 
-        Ok(Some(output.stdout))
+        let out = if stderr_to_stdout {
+            [output.stdout.as_slice(), output.stderr.as_slice()].concat()
+        } else {
+            output.stdout
+        };
+        Ok(Some(out))
     }
 
     fn run_sequence_stage(
@@ -297,14 +393,17 @@ impl Pipeline {
         args: &[String],
         previous_output: Option<Vec<u8>>,
         executor: &CommandExecutor,
+        stderr_to_stdout: bool,
     ) -> Result<(Option<Vec<u8>>, bool), PipelineError> {
         let success = if let Some(prev_out) = previous_output {
             if !executor.is_builtin(command) {
                 let mut cmd = Command::new(command);
-                cmd.args(args)
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::inherit());
+                cmd.args(args).stdin(Stdio::piped()).stdout(Stdio::piped());
+                if stderr_to_stdout {
+                    cmd.stderr(Stdio::piped());
+                } else {
+                    cmd.stderr(Stdio::inherit());
+                }
                 let mut child = cmd.spawn().map_err(|e| PipelineError::Execution(e.to_string()))?;
                 if let Some(mut stdin) = child.stdin.take() {
                     let _ = stdin.write_all(&prev_out);
@@ -312,8 +411,13 @@ impl Pipeline {
                 let output = child
                     .wait_with_output()
                     .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                if !output.stdout.is_empty() {
-                    let s = String::from_utf8_lossy(&output.stdout);
+                let to_print = if stderr_to_stdout {
+                    [output.stdout.as_slice(), output.stderr.as_slice()].concat()
+                } else {
+                    output.stdout
+                };
+                if !to_print.is_empty() {
+                    let s = String::from_utf8_lossy(&to_print);
                     print!("{}", s);
                 }
                 output.status.success()
@@ -323,9 +427,27 @@ impl Pipeline {
                     .map_err(|e| PipelineError::Execution(e.to_string()))?
             }
         } else {
-            executor
-                .execute_with_status(command, args)
-                .map_err(|e| PipelineError::Execution(e.to_string()))?
+            if !executor.is_builtin(command) && stderr_to_stdout {
+                let mut cmd = Command::new(command);
+                cmd.args(args)
+                    .stdin(Stdio::inherit())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+                let output = cmd
+                    .output()
+                    .map_err(|e| PipelineError::Execution(e.to_string()))?;
+                let to_print =
+                    [output.stdout.as_slice(), output.stderr.as_slice()].concat();
+                if !to_print.is_empty() {
+                    let s = String::from_utf8_lossy(&to_print);
+                    print!("{}", s);
+                }
+                output.status.success()
+            } else {
+                executor
+                    .execute_with_status(command, args)
+                    .map_err(|e| PipelineError::Execution(e.to_string()))?
+            }
         };
         Ok((None, success))
     }
@@ -336,6 +458,7 @@ impl Pipeline {
         command: &str,
         args: &[String],
         previous_output: Option<Vec<u8>>,
+        append: bool,
     ) -> Result<(), PipelineError> {
         let next_stage = self
             .stages
@@ -353,7 +476,15 @@ impl Pipeline {
             result.stdout
         };
 
-        std::fs::write(&next_stage.command, output)?;
+        if append {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&next_stage.command)
+                .and_then(|mut f| std::io::Write::write_all(&mut f, &output))?;
+        } else {
+            std::fs::write(&next_stage.command, output)?;
+        }
         Ok(())
     }
 
@@ -363,12 +494,18 @@ impl Pipeline {
         command: &str,
         args: &[String],
         previous_output: Option<Vec<u8>>,
+        append: bool,
     ) -> Result<(), PipelineError> {
         let next_stage = self.stages.get(index + 1).ok_or_else(|| {
             PipelineError::Execution("Redirect 2> requires a file path".to_string())
         })?;
 
-        let stderr_file = std::fs::File::create(&next_stage.command)
+        let stderr_file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(append)
+            .truncate(!append)
+            .open(&next_stage.command)
             .map_err(|e| PipelineError::Execution(e.to_string()))?;
 
         let mut cmd = Command::new(command);
@@ -473,6 +610,18 @@ mod tests {
     #[test]
     fn test_parse_redirect_stderr() {
         let pipeline = Pipeline::parse("cmd 2> err.txt").unwrap();
+        assert_eq!(pipeline.stage_count(), 2);
+    }
+
+    #[test]
+    fn test_parse_redirect_append() {
+        let pipeline = Pipeline::parse("echo x >> log").unwrap();
+        assert_eq!(pipeline.stage_count(), 2);
+    }
+
+    #[test]
+    fn test_parse_2_to_1() {
+        let pipeline = Pipeline::parse("cmd 2>&1 | cat").unwrap();
         assert_eq!(pipeline.stage_count(), 2);
     }
 

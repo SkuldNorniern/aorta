@@ -9,22 +9,73 @@ where
             break;
         }
 
-        let (var_name, consumed_len, default_val) = if result.as_bytes()[dollar_pos + 1] == b'{' {
-            parse_braced_var(&result[dollar_pos + 2..])
+        let next = result.as_bytes()[dollar_pos + 1];
+        let (consumed_len, value) = if next == b'(' {
+            if let Some((len, out)) = parse_command_substitution(&result[dollar_pos + 2..]) {
+                (2 + len, out)
+            } else {
+                break;
+            }
+        } else if next == b'{' {
+            let (var_name, consumed_len, default_val) = parse_braced_var(&result[dollar_pos + 2..]);
+            let val = match (lookup(var_name), default_val) {
+                (Some(v), _) if !v.is_empty() => v,
+                (_, Some(d)) => d.to_string(),
+                _ => String::new(),
+            };
+            (2 + consumed_len, val)
         } else {
-            parse_simple_var(&result[dollar_pos + 1..])
+            let (var_name, consumed_len, default_val) =
+                parse_simple_var(&result[dollar_pos + 1..]);
+            let val = match (lookup(var_name), default_val) {
+                (Some(v), _) if !v.is_empty() => v,
+                (_, Some(d)) => d.to_string(),
+                _ => String::new(),
+            };
+            (1 + consumed_len, val)
         };
 
-        let replace_end = dollar_pos + 1 + consumed_len;
-        let value = match (lookup(var_name), default_val) {
-            (Some(v), _) if !v.is_empty() => v,
-            (_, Some(d)) => d.to_string(),
-            _ => String::new(),
-        };
+        let replace_end = dollar_pos + consumed_len;
         result.replace_range(dollar_pos..replace_end, &value);
     }
 
     result
+}
+
+fn parse_command_substitution(rest: &str) -> Option<(usize, String)> {
+    let mut depth = 1usize;
+    for (pos, c) in rest.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    let inner = &rest[..pos];
+                    let output = run_command_substitution(inner);
+                    return Some((pos + 1, output));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn run_command_substitution(cmd: &str) -> String {
+    let cmd = cmd.trim();
+    if cmd.is_empty() {
+        return String::new();
+    }
+    let output = std::process::Command::new("sh")
+        .args(["-c", cmd])
+        .output();
+    match output {
+        Ok(out) => {
+            let s = String::from_utf8_lossy(&out.stdout);
+            s.trim_end().to_string()
+        }
+        Err(_) => String::new(),
+    }
 }
 
 fn parse_simple_var(rest: &str) -> (&str, usize, Option<&str>) {
@@ -109,5 +160,12 @@ mod tests {
             }),
             "fallback"
         );
+    }
+
+    #[test]
+    fn test_expand_command_substitution() {
+        let lookup = |_: &str| None;
+        let result = expand_env_vars_with("echo $(echo hello)", lookup);
+        assert_eq!(result, "echo hello");
     }
 }

@@ -27,6 +27,8 @@ pub struct Shell {
 
 impl Shell {
     pub fn new(flags: Flags) -> Result<Self, ShellError> {
+        crate::core::config::ensure_default_config()?;
+
         let completer = ShellCompleter::new();
         let mut editor = Editor::<ShellCompleter, FileHistory>::new()?;
 
@@ -38,7 +40,7 @@ impl Shell {
         let executor = CommandExecutor::new(&flags)?;
         let config_path = flags.get_value("config").map(|s| s.as_str());
         let mut config = Config::new(config_path)?.with_executor(executor.clone());
-        config.load()?;
+        config.load_with_flags(&flags)?;
 
         if let Some(path) = env::var_os("PATH") {
             env::set_var("PATH", path.clone());
