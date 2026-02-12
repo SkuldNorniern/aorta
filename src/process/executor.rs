@@ -74,6 +74,63 @@ impl CommandExecutor {
             }
         }
     }
+
+    pub fn spawn_process_with_status(&self, args: &[&str]) -> Result<bool, ProcessError> {
+        let expanded_args: Vec<String> = args
+            .iter()
+            .map(|&arg| {
+                if arg.contains('~') {
+                    self.path_expander
+                        .expand(arg)
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_else(|_| arg.to_owned())
+                } else {
+                    arg.to_owned()
+                }
+            })
+            .collect();
+
+        let mut command = Command::new(&expanded_args[0]);
+        command
+            .args(&expanded_args[1..])
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .env_clear()
+            .envs(std::env::vars());
+
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    if !self.quiet_mode {
+                        eprintln!("aorta: command not found: {}", args[0]);
+                    }
+                    return Ok(false);
+                }
+                return Err(e.into());
+            }
+        };
+
+        let _pid = child.id();
+        signal::setup_signal_handlers()?;
+
+        match child.wait() {
+            Ok(status) => {
+                if !status.success() && !self.quiet_mode {
+                    println!("Process exited with status: {}", status);
+                }
+                Ok(status.success())
+            }
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    Err(ProcessError::CommandNotFound(args[0].to_string()))
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

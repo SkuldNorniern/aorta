@@ -146,16 +146,18 @@ impl CommandExecutor {
     }
 
     pub fn execute(&self, command: &str, args: &[String]) -> Result<(), CommandError> {
-        // Convert args to String only for built-in commands
+        self.execute_with_status(command, args).map(|_| ())
+    }
+
+    pub fn execute_with_status(&self, command: &str, args: &[String]) -> Result<bool, CommandError> {
         if let Some(cmd) = self.commands.get(command) {
-            cmd.execute(args)
+            cmd.execute(args).map(|_| true)
         } else {
-            // For external commands, use process executor with string slices
             let mut full_args = vec![command];
             let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
             full_args.extend(args_refs);
             self.process_executor
-                .spawn_process(&full_args)
+                .spawn_process_with_status(&full_args)
                 .map_err(|e| CommandError::ExecutionError(e.to_string()))
         }
     }
