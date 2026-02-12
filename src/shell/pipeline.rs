@@ -9,12 +9,13 @@ use crate::core::commands::{CommandError, CommandExecutor};
 
 #[derive(Debug)]
 pub enum PipelineOperator {
-    Pipe,        // |
-    And,         // &&
-    Or,          // ||
-    Sequence,    // ;
-    Redirect,    // >
-    RedirectIn,  // <
+    Pipe,           // |
+    And,            // &&
+    Or,             // ||
+    Sequence,       // ;
+    Redirect,       // >
+    RedirectStderr, // 2>
+    RedirectIn,     // <
 }
 
 #[derive(Debug)]
@@ -123,11 +124,14 @@ impl Pipeline {
                     current_command.clear();
                 }
                 '>' => {
-                    Self::add_stage(
-                        &mut stages,
-                        &current_command,
-                        Some(PipelineOperator::Redirect),
-                    )?;
+                    let (cmd, op) = if current_command.trim_end().ends_with(" 2") {
+                        let t = current_command.trim_end();
+                        let cmd_part = t[..t.len().saturating_sub(2)].trim_end();
+                        (cmd_part.to_string(), PipelineOperator::RedirectStderr)
+                    } else {
+                        (current_command.clone(), PipelineOperator::Redirect)
+                    };
+                    Self::add_stage(&mut stages, &cmd, Some(op))?;
                     current_command.clear();
                 }
                 '<' => {
@@ -221,6 +225,10 @@ impl Pipeline {
                 }
                 Some(PipelineOperator::Redirect) => {
                     self.run_redirect_stage(index, &command, &args, previous_output)?;
+                    return Ok(());
+                }
+                Some(PipelineOperator::RedirectStderr) => {
+                    self.run_redirect_stderr_stage(index, &command, &args, previous_output)?;
                     return Ok(());
                 }
                 Some(PipelineOperator::RedirectIn) => {
@@ -349,6 +357,40 @@ impl Pipeline {
         Ok(())
     }
 
+    fn run_redirect_stderr_stage(
+        &self,
+        index: usize,
+        command: &str,
+        args: &[String],
+        previous_output: Option<Vec<u8>>,
+    ) -> Result<(), PipelineError> {
+        let next_stage = self.stages.get(index + 1).ok_or_else(|| {
+            PipelineError::Execution("Redirect 2> requires a file path".to_string())
+        })?;
+
+        let stderr_file = std::fs::File::create(&next_stage.command)
+            .map_err(|e| PipelineError::Execution(e.to_string()))?;
+
+        let mut cmd = Command::new(command);
+        cmd.args(args)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::from(stderr_file));
+
+        if let Some(prev_out) = previous_output {
+            cmd.stdin(Stdio::piped());
+            let mut child = cmd.spawn().map_err(|e| PipelineError::Execution(e.to_string()))?;
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(&prev_out);
+            }
+            let _ = child.wait();
+        } else {
+            cmd.stdin(Stdio::inherit());
+            let _ = cmd.status().map_err(|e| PipelineError::Execution(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
     fn run_redirect_in_stage(
         &self,
         index: usize,
@@ -425,6 +467,12 @@ mod tests {
     #[test]
     fn test_parse_redirect_in() {
         let pipeline = Pipeline::parse("cat < file").unwrap();
+        assert_eq!(pipeline.stage_count(), 2);
+    }
+
+    #[test]
+    fn test_parse_redirect_stderr() {
+        let pipeline = Pipeline::parse("cmd 2> err.txt").unwrap();
         assert_eq!(pipeline.stage_count(), 2);
     }
 
