@@ -1,5 +1,7 @@
 use std::{fs, path::Path, path::PathBuf};
 
+use crate::flags::Flags;
+
 use super::{Config, ConfigError, ConfigPaths};
 
 pub struct ConfigLoader<'a> {
@@ -11,10 +13,32 @@ impl<'a> ConfigLoader<'a> {
         Self { paths }
     }
 
-    pub fn load_configs(&self, config: &mut Config) -> Result<(), ConfigError> {
-        self.source_if_exists(&self.paths.profile_path, config)?;
-        self.source_if_exists(&self.paths.rc_path, config)?;
-        self.source_custom_dir(config)?;
+    pub fn load_configs(&self, config: &mut Config, flags: &Flags) -> Result<(), ConfigError> {
+        if !flags.is_set("noprofile") {
+            self.source_if_exists(&self.paths.system_profile, config)?;
+            self.source_if_exists(&self.paths.profile_path, config)?;
+        }
+
+        if !flags.is_set("norc") {
+            self.source_if_exists(&self.paths.system_rc, config)?;
+            self.source_if_exists(&self.paths.rc_path, config)?;
+            self.source_custom_dir(config)?;
+        }
+
+        if let Some(env_path) = std::env::var_os("ENV")
+            .or_else(|| std::env::var_os("AORTA_ENV"))
+        {
+            let p = Path::new(&env_path);
+            if p.is_absolute() && p.exists() {
+                self.source_if_exists(p, config)?;
+            } else if let Some(home) = crate::path::home_dir() {
+                let full = home.join(env_path);
+                if full.exists() {
+                    self.source_if_exists(&full, config)?;
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -349,9 +373,30 @@ mod tests {
         let paths = ConfigPaths::new(None).unwrap();
         let loader = ConfigLoader::new(&paths);
         let mut config = setup_test_config();
-        loader.load_configs(&mut config).unwrap();
+        loader.load_configs(&mut config, &crate::flags::Flags::new()).unwrap();
         assert_eq!(config.get_alias("mc").unwrap(), "echo custom");
         env::remove_var("AORTA_HOME");
+    }
+
+    #[test]
+    fn test_noprofile_skips_profile() {
+        let profile_content = "export NOPROFILE_TEST=loaded";
+        let temp = env::temp_dir().join("aorta_noprofile_test");
+        let _ = std::fs::create_dir_all(&temp);
+        std::fs::write(temp.join("profile"), profile_content).unwrap();
+        env::set_var("HOME", &temp);
+        let mut flags = crate::flags::Flags::new();
+        flags.parse(&["--noprofile".to_string()]).unwrap();
+
+        let paths = ConfigPaths::new(None).unwrap();
+        let mut config_paths = paths;
+        config_paths.profile_path = temp.join("profile");
+
+        let loader = ConfigLoader::new(&config_paths);
+        let mut config = setup_test_config();
+        loader.load_configs(&mut config, &flags).unwrap();
+
+        assert!(env::var("NOPROFILE_TEST").is_err());
     }
 
     #[test]

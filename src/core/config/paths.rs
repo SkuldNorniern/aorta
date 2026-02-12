@@ -1,11 +1,17 @@
+use super::program::ProgramConfig;
 use super::ConfigError;
 use std::path::PathBuf;
+
+const ETC_AORTA_PROFILE: &str = "/etc/aorta/profile";
+const ETC_AORTA_RC: &str = "/etc/aorta/aortarc";
 
 #[derive(Debug, Clone)]
 pub struct ConfigPaths {
     pub rc_path: PathBuf,
     pub profile_path: PathBuf,
     pub aorta_home: PathBuf,
+    pub system_profile: PathBuf,
+    pub system_rc: PathBuf,
 }
 
 impl ConfigPaths {
@@ -13,19 +19,19 @@ impl ConfigPaths {
         let home_path =
             crate::path::home_dir().ok_or(ConfigError::HomeDirNotFound)?;
 
-        let aorta_home = std::env::var_os("AORTA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home_path.join(".aorta"));
+        let prog = ProgramConfig::load(&home_path)?;
 
         let rc_path = match custom_rc_path {
             Some(p) => PathBuf::from(p),
-            None => home_path.join(".aortarc"),
+            None => prog.rc_path,
         };
 
         Ok(ConfigPaths {
             rc_path,
             profile_path: home_path.join(".profile"),
-            aorta_home,
+            aorta_home: prog.aorta_home,
+            system_profile: PathBuf::from(ETC_AORTA_PROFILE),
+            system_rc: PathBuf::from(ETC_AORTA_RC),
         })
     }
 }
@@ -42,6 +48,8 @@ mod tests {
 
         assert_eq!(paths.rc_path, PathBuf::from("/home/testuser/.aortarc"));
         assert_eq!(paths.profile_path, PathBuf::from("/home/testuser/.profile"));
+        assert_eq!(paths.system_profile, PathBuf::from("/etc/aorta/profile"));
+        assert_eq!(paths.system_rc, PathBuf::from("/etc/aorta/aortarc"));
     }
 
     #[test]

@@ -1,11 +1,14 @@
 use std::{borrow::Cow, collections::BTreeMap, fmt};
 
 mod aliases;
+mod bootstrap;
 mod env_vars;
 mod loader;
 mod paths;
+pub(super) mod program;
 
 use super::commands::{CommandError, CommandExecutor};
+use crate::flags::Flags;
 use aliases::AliasManager;
 use env_vars::EnvVarManager;
 use loader::ConfigLoader;
@@ -16,6 +19,14 @@ pub struct Config {
     aliases: AliasManager,
     env_vars: EnvVarManager,
     executor: Option<CommandExecutor>,
+}
+
+pub fn ensure_default_config() -> Result<(), ConfigError> {
+    let home = crate::path::home_dir().ok_or(ConfigError::HomeDirNotFound)?;
+    program::ProgramConfig::write_default_config()?;
+    bootstrap::ensure_aortarc(&home)?;
+    bootstrap::ensure_aorta_home(&home)?;
+    Ok(())
 }
 
 impl Config {
@@ -60,11 +71,15 @@ impl Config {
         Ok(())
     }
 
-    pub fn load(&mut self) -> Result<(), ConfigError> {
+    pub fn load_with_flags(&mut self, flags: &Flags) -> Result<(), ConfigError> {
         let paths = self.paths.clone();
-        let loader: ConfigLoader<'_> = ConfigLoader::new(&paths);
-        loader.load_configs(self)?;
+        let loader = ConfigLoader::new(&paths);
+        loader.load_configs(self, flags)?;
         Ok(())
+    }
+
+    pub fn load(&mut self) -> Result<(), ConfigError> {
+        self.load_with_flags(&Flags::new())
     }
 
     pub fn get_alias<'a>(&'a self, cmd: &str) -> Option<Cow<'a, str>> {
