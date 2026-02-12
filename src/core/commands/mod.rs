@@ -100,7 +100,7 @@ impl CommandExecutor {
             })?)),
         };
 
-        let history_path = dirs::home_dir()
+        let history_path = crate::path::home_dir()
             .ok_or_else(|| {
                 CommandError::IoError(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
@@ -173,15 +173,18 @@ mod tests {
     use std::path::PathBuf;
 
     fn setup_test_env() -> (CommandExecutor, PathBuf) {
-        let executor = CommandExecutor::new(&crate::flags::Flags::default()).unwrap();
         let temp_dir = env::temp_dir();
+        let home = temp_dir.join(".aorta_test_home");
+        let _ = fs::create_dir_all(&home);
+        env::set_var("HOME", home.to_str().unwrap());
+        let executor = CommandExecutor::new(&crate::flags::Flags::default()).unwrap();
         (executor, temp_dir)
     }
 
     #[test]
     fn test_execute_cd() {
         let (executor, temp_dir) = setup_test_env();
-        let home_dir = env::var("HOME").unwrap();
+        let home_dir = env::var("HOME").expect("HOME set in setup_test_env");
 
         // Test cd without args (should go to home)
         assert!(executor.execute("cd", &[]).is_ok());

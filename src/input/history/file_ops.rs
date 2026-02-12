@@ -95,3 +95,19 @@ impl FileOps {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_file_ops_load_empty_missing_file() -> Result<(), HistoryError> {
+        let path = env::temp_dir().join("aorta_test_nonexistent_history");
+        let _ = std::fs::remove_file(&path);
+        let ops = FileOps::new(path);
+        let entries = ops.load_entries()?;
+        assert!(entries.is_empty());
+        Ok(())
+    }
+}

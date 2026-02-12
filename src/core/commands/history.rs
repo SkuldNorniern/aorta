@@ -144,3 +144,27 @@ fn format_timestamp(timestamp: u64) -> String {
     let hours = (timestamp / 3600) % 24;
     format!("{:02}:{:02}:{:02}", hours, mins, secs)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+    use std::fs;
+
+    fn setup_history() -> (HistoryCommand, std::path::PathBuf) {
+        let temp_dir = env::temp_dir().join("aorta_history_test");
+        fs::create_dir_all(&temp_dir).unwrap();
+        env::set_var("HOME", &temp_dir);
+        let history_path = temp_dir.join(".aorta_history");
+        let history = History::new(history_path, 100).unwrap();
+        let cmd = HistoryCommand::new(Arc::new(Mutex::new(history)));
+        (cmd, temp_dir)
+    }
+
+    #[test]
+    fn test_history_command_empty_args() -> Result<(), CommandError> {
+        let (cmd, _) = setup_history();
+        cmd.execute(&[])?;
+        Ok(())
+    }
+}

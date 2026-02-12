@@ -63,3 +63,51 @@ pub struct HistoryStats {
     pub average_duration: u64,
     pub most_used: Vec<(String, usize)>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_history_entry_new_command() {
+        let entry = HistoryEntry::new_command("echo hello", 0, 100);
+        match &entry {
+            HistoryEntry::Command {
+                command,
+                exit_code,
+                duration,
+                ..
+            } => {
+                assert_eq!(command.as_ref(), "echo hello");
+                assert_eq!(*exit_code, 0);
+                assert_eq!(*duration, 100);
+            }
+            _ => panic!("expected Command variant"),
+        }
+    }
+
+    #[test]
+    fn test_history_entry_new_event() {
+        let entry = HistoryEntry::new_event("session start");
+        match &entry {
+            HistoryEntry::Event { description, .. } => {
+                assert_eq!(description.as_ref(), "session start");
+            }
+            _ => panic!("expected Event variant"),
+        }
+    }
+
+    #[test]
+    fn test_history_search_mode_eq() {
+        assert_eq!(HistorySearchMode::Prefix, HistorySearchMode::Prefix);
+        assert_ne!(HistorySearchMode::Prefix, HistorySearchMode::Contains);
+    }
+
+    #[test]
+    fn test_history_stats_default() {
+        let stats = HistoryStats::default();
+        assert_eq!(stats.total_commands, 0);
+        assert_eq!(stats.unique_commands, 0);
+        assert_eq!(stats.average_duration, 0);
+    }
+}
