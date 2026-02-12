@@ -19,8 +19,8 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new() -> Result<Self, ConfigError> {
-        let paths = ConfigPaths::new()?;
+    pub fn new(custom_config_path: Option<&str>) -> Result<Self, ConfigError> {
+        let paths = ConfigPaths::new(custom_config_path)?;
         let aliases = AliasManager::new();
         let env_vars = EnvVarManager::new();
 

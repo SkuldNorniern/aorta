@@ -38,6 +38,8 @@ impl<'a> ConfigLoader<'a> {
             s if s.starts_with("export ") => self.process_env_var(&s["export ".len()..], config),
             s if s.starts_with("PATH=") => self.process_path_var(&s["PATH=".len()..], config),
             s if s.starts_with("alias ") => self.process_alias(&s["alias ".len()..], config),
+            s if s.starts_with("theme ") => self.process_theme(&s["theme ".len()..], config),
+            s if s.starts_with("plugins ") => self.process_plugins(&s["plugins ".len()..], config),
             s if s.starts_with("if ") => self.process_conditional(s, config),
             s if s.starts_with(". ") || s.starts_with("source ") => self.process_source(s, config),
             _ => config.execute_command(line),
@@ -84,6 +86,32 @@ impl<'a> ConfigLoader<'a> {
 
         // Let EnvVarManager handle the sanitization
         config.env_vars.set("PATH", &new_path);
+        Ok(())
+    }
+
+    fn process_theme(&self, name: &str, config: &mut Config) -> Result<(), ConfigError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Ok(());
+        }
+        let theme_path = self.paths.aorta_home.join("themes").join(format!("{}.aorta", name));
+        self.source_if_exists(&theme_path, config)
+    }
+
+    fn process_plugins(&self, names: &str, config: &mut Config) -> Result<(), ConfigError> {
+        for name in names.split_whitespace() {
+            let name = name.trim();
+            if name.is_empty() {
+                continue;
+            }
+            let plugin_path = self
+                .paths
+                .aorta_home
+                .join("plugins")
+                .join(name)
+                .join(format!("{}.aorta", name));
+            self.source_if_exists(&plugin_path, config)?;
+        }
         Ok(())
     }
 
@@ -222,7 +250,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn setup_test_config() -> Config {
-        Config::new().unwrap()
+        Config::new(None).unwrap()
     }
 
     fn create_temp_config_file(content: &str) -> PathBuf {
@@ -234,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_process_env_var() {
-        let paths = ConfigPaths::new().unwrap();
+        let paths = ConfigPaths::new(None).unwrap();
         let loader = ConfigLoader::new(&paths);
         let mut config = setup_test_config();
 
@@ -246,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_process_path_var() {
-        let paths = ConfigPaths::new().unwrap();
+        let paths = ConfigPaths::new(None).unwrap();
         let loader = ConfigLoader::new(&paths);
         let mut config = setup_test_config();
 
@@ -262,12 +290,50 @@ mod tests {
 
     #[test]
     fn test_process_alias() {
-        let paths = ConfigPaths::new().unwrap();
+        let paths = ConfigPaths::new(None).unwrap();
         let loader = ConfigLoader::new(&paths);
         let mut config = setup_test_config();
 
         loader.process_alias("ll='ls -la'", &mut config).unwrap();
         assert_eq!(config.get_alias("ll").unwrap(), "ls -la");
+    }
+
+    #[test]
+    fn test_process_theme() {
+        let temp = env::temp_dir().join("aorta_theme_test");
+        let _ = fs::create_dir_all(temp.join("themes"));
+        fs::write(
+            temp.join("themes").join("test.aorta"),
+            "export AORTA_PROMPT=\"test > \"",
+        )
+        .unwrap();
+        env::set_var("HOME", env::temp_dir());
+        env::set_var("AORTA_HOME", &temp);
+        let paths = ConfigPaths::new(None).unwrap();
+        let loader = ConfigLoader::new(&paths);
+        let mut config = setup_test_config();
+        loader.process_theme("test", &mut config).unwrap();
+        assert_eq!(env::var("AORTA_PROMPT").unwrap(), "test > ");
+        env::remove_var("AORTA_HOME");
+    }
+
+    #[test]
+    fn test_process_plugins() {
+        let temp = env::temp_dir().join("aorta_plugins_test");
+        let _ = fs::create_dir_all(temp.join("plugins").join("sample"));
+        fs::write(
+            temp.join("plugins").join("sample").join("sample.aorta"),
+            "alias sp=echo sample",
+        )
+        .unwrap();
+        env::set_var("HOME", env::temp_dir());
+        env::set_var("AORTA_HOME", &temp);
+        let paths = ConfigPaths::new(None).unwrap();
+        let loader = ConfigLoader::new(&paths);
+        let mut config = setup_test_config();
+        loader.process_plugins("sample", &mut config).unwrap();
+        assert_eq!(config.get_alias("sp").unwrap(), "echo sample");
+        env::remove_var("AORTA_HOME");
     }
 
     #[test]
@@ -279,7 +345,7 @@ mod tests {
         "#;
         let file_path = create_temp_config_file(content);
 
-        let paths = ConfigPaths::new().unwrap();
+        let paths = ConfigPaths::new(None).unwrap();
         let loader = ConfigLoader::new(&paths);
         let mut config = setup_test_config();
 
@@ -306,7 +372,7 @@ mod tests {
         "#;
         let file_path = create_temp_config_file(content);
 
-        let paths = ConfigPaths::new().unwrap();
+        let paths = ConfigPaths::new(None).unwrap();
         let loader = ConfigLoader::new(&paths);
         let mut config = setup_test_config();
 
@@ -329,7 +395,7 @@ mod tests {
         "#;
         let file_path = create_temp_config_file(content);
 
-        let paths = ConfigPaths::new().unwrap();
+        let paths = ConfigPaths::new(None).unwrap();
         let loader = ConfigLoader::new(&paths);
         let mut config = setup_test_config();
 
@@ -354,7 +420,7 @@ mod tests {
 
         let config_file = create_temp_config_file(&content);
 
-        let paths = ConfigPaths::new().unwrap();
+        let paths = ConfigPaths::new(None).unwrap();
         let loader = ConfigLoader::new(&paths);
         let mut config = setup_test_config();
 
@@ -376,7 +442,7 @@ mod tests {
         "#;
         let file_path = create_temp_config_file(content);
 
-        let paths = ConfigPaths::new().unwrap();
+        let paths = ConfigPaths::new(None).unwrap();
         let loader = ConfigLoader::new(&paths);
         let mut config = setup_test_config();
 
@@ -398,7 +464,7 @@ mod tests {
         "#;
         let file_path = create_temp_config_file(content);
 
-        let paths = ConfigPaths::new().unwrap();
+        let paths = ConfigPaths::new(None).unwrap();
         let loader = ConfigLoader::new(&paths);
         let mut config = setup_test_config();
 
