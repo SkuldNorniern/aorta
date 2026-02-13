@@ -105,6 +105,16 @@ impl Flags {
             },
         );
 
+        flags.insert(
+            "compat".to_string(),
+            Flag {
+                short: String::new(),
+                long: "--compat".to_string(),
+                description: "Enable compatibility mode for profile/config parsing".to_string(),
+                value: None,
+            },
+        );
+
         Flags { flags }
     }
 
@@ -187,7 +197,10 @@ mod tests {
         let mut flags = Flags::new();
         flags.parse(&["-c".to_string(), "/path/to/config".to_string()])?;
         assert!(flags.is_set("config"));
-        assert_eq!(flags.get_value("config"), Some(&"/path/to/config".to_string()));
+        assert_eq!(
+            flags.get_value("config"),
+            Some(&"/path/to/config".to_string())
+        );
         Ok(())
     }
 
@@ -196,6 +209,14 @@ mod tests {
         let mut flags = Flags::new();
         flags.parse(&["--skip-register".to_string()])?;
         assert!(flags.is_set("skip-register"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_flags_compat() -> Result<(), ShellError> {
+        let mut flags = Flags::new();
+        flags.parse(&["--compat".to_string()])?;
+        assert!(flags.is_set("compat"));
         Ok(())
     }
 }

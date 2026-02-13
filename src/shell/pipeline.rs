@@ -9,15 +9,15 @@ use crate::core::commands::{CommandError, CommandExecutor};
 
 #[derive(Debug)]
 pub enum PipelineOperator {
-    Pipe,                // |
-    And,                 // &&
-    Or,                  // ||
-    Sequence,            // ;
-    Redirect,            // >
-    RedirectAppend,      // >>
-    RedirectStderr,      // 2>
+    Pipe,                 // |
+    And,                  // &&
+    Or,                   // ||
+    Sequence,             // ;
+    Redirect,             // >
+    RedirectAppend,       // >>
+    RedirectStderr,       // 2>
     RedirectStderrAppend, // 2>>
-    RedirectIn,          // <
+    RedirectIn,           // <
 }
 
 #[derive(Debug)]
@@ -102,7 +102,11 @@ impl Pipeline {
                                 last.operator = Some(PipelineOperator::Pipe);
                             }
                         } else {
-                            Self::add_stage(&mut stages, &current_command, Some(PipelineOperator::Pipe))?;
+                            Self::add_stage(
+                                &mut stages,
+                                &current_command,
+                                Some(PipelineOperator::Pipe),
+                            )?;
                         }
                     }
                     current_command.clear();
@@ -120,7 +124,11 @@ impl Pipeline {
                             last.operator = Some(PipelineOperator::And);
                         }
                     } else {
-                        Self::add_stage(&mut stages, &current_command, Some(PipelineOperator::And))?;
+                        Self::add_stage(
+                            &mut stages,
+                            &current_command,
+                            Some(PipelineOperator::And),
+                        )?;
                     }
                     current_command.clear();
                 }
@@ -137,7 +145,8 @@ impl Pipeline {
                     if is_append {
                         chars.next();
                     }
-                    let (cmd, op, stderr_to_stdout) = if current_command.trim_end().ends_with(" 2") {
+                    let (cmd, op, stderr_to_stdout) = if current_command.trim_end().ends_with(" 2")
+                    {
                         let t = current_command.trim_end();
                         let cmd_part = t[..t.len().saturating_sub(2)].trim_end();
                         while chars.peek().map_or(false, |c| c.is_ascii_whitespace()) {
@@ -151,11 +160,7 @@ impl Pipeline {
                         if is_2_to_1 {
                             chars.next();
                             chars.next();
-                            (
-                                cmd_part.to_string(),
-                                None,
-                                true,
-                            )
+                            (cmd_part.to_string(), None, true)
                         } else {
                             let op = if is_append {
                                 PipelineOperator::RedirectStderrAppend
@@ -259,12 +264,7 @@ impl Pipeline {
 
             previous_output = match &stage.operator {
                 Some(PipelineOperator::Pipe) => {
-                    Self::run_pipe_stage(
-                        &command,
-                        &args,
-                        previous_output,
-                        stage.stderr_to_stdout,
-                    )?
+                    Self::run_pipe_stage(&command, &args, previous_output, stage.stderr_to_stdout)?
                 }
                 Some(PipelineOperator::And)
                 | Some(PipelineOperator::Or)
@@ -368,7 +368,9 @@ impl Pipeline {
 
         let output = if let Some(prev_out) = previous_output {
             cmd.stdin(Stdio::piped());
-            let mut child = cmd.spawn().map_err(|e| PipelineError::Execution(e.to_string()))?;
+            let mut child = cmd
+                .spawn()
+                .map_err(|e| PipelineError::Execution(e.to_string()))?;
             if let Some(mut stdin) = child.stdin.take() {
                 let _ = stdin.write_all(&prev_out);
             }
@@ -377,7 +379,8 @@ impl Pipeline {
                 .map_err(|e| PipelineError::Execution(e.to_string()))?
         } else {
             cmd.stdin(Stdio::inherit());
-            cmd.output().map_err(|e| PipelineError::Execution(e.to_string()))?
+            cmd.output()
+                .map_err(|e| PipelineError::Execution(e.to_string()))?
         };
 
         let out = if stderr_to_stdout {
@@ -404,7 +407,9 @@ impl Pipeline {
                 } else {
                     cmd.stderr(Stdio::inherit());
                 }
-                let mut child = cmd.spawn().map_err(|e| PipelineError::Execution(e.to_string()))?;
+                let mut child = cmd
+                    .spawn()
+                    .map_err(|e| PipelineError::Execution(e.to_string()))?;
                 if let Some(mut stdin) = child.stdin.take() {
                     let _ = stdin.write_all(&prev_out);
                 }
@@ -436,8 +441,7 @@ impl Pipeline {
                 let output = cmd
                     .output()
                     .map_err(|e| PipelineError::Execution(e.to_string()))?;
-                let to_print =
-                    [output.stdout.as_slice(), output.stderr.as_slice()].concat();
+                let to_print = [output.stdout.as_slice(), output.stderr.as_slice()].concat();
                 if !to_print.is_empty() {
                     let s = String::from_utf8_lossy(&to_print);
                     print!("{}", s);
@@ -460,10 +464,9 @@ impl Pipeline {
         previous_output: Option<Vec<u8>>,
         append: bool,
     ) -> Result<(), PipelineError> {
-        let next_stage = self
-            .stages
-            .get(index + 1)
-            .ok_or_else(|| PipelineError::Execution("Redirect operator requires a file path".to_string()))?;
+        let next_stage = self.stages.get(index + 1).ok_or_else(|| {
+            PipelineError::Execution("Redirect operator requires a file path".to_string())
+        })?;
 
         let output = if let Some(out) = previous_output {
             out
@@ -472,7 +475,9 @@ impl Pipeline {
             cmd.args(args)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::inherit());
-            let result = cmd.output().map_err(|e| PipelineError::Execution(e.to_string()))?;
+            let result = cmd
+                .output()
+                .map_err(|e| PipelineError::Execution(e.to_string()))?;
             result.stdout
         };
 
@@ -515,14 +520,18 @@ impl Pipeline {
 
         if let Some(prev_out) = previous_output {
             cmd.stdin(Stdio::piped());
-            let mut child = cmd.spawn().map_err(|e| PipelineError::Execution(e.to_string()))?;
+            let mut child = cmd
+                .spawn()
+                .map_err(|e| PipelineError::Execution(e.to_string()))?;
             if let Some(mut stdin) = child.stdin.take() {
                 let _ = stdin.write_all(&prev_out);
             }
             let _ = child.wait();
         } else {
             cmd.stdin(Stdio::inherit());
-            let _ = cmd.status().map_err(|e| PipelineError::Execution(e.to_string()))?;
+            let _ = cmd
+                .status()
+                .map_err(|e| PipelineError::Execution(e.to_string()))?;
         }
 
         Ok(())
@@ -548,8 +557,8 @@ impl Pipeline {
         } else {
             std::path::PathBuf::from(path_str)
         };
-        let stdin_file = std::fs::File::open(&file_path)
-            .map_err(|e| PipelineError::Execution(e.to_string()))?;
+        let stdin_file =
+            std::fs::File::open(&file_path).map_err(|e| PipelineError::Execution(e.to_string()))?;
         let mut cmd = std::process::Command::new(command);
         cmd.args(args)
             .stdin(Stdio::from(stdin_file))

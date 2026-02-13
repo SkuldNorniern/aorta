@@ -105,7 +105,11 @@ mod tests {
     fn test_shell_error_display() {
         assert!(!ShellError::HomeDirNotFound.to_string().is_empty());
         assert!(ShellError::HomeDirNotFound.to_string().contains("Home"));
-        assert!(ShellError::CommandNotFound("ls".to_string()).to_string().contains("ls"));
-        assert!(ShellError::PathError("bad path".to_string()).to_string().contains("bad path"));
+        assert!(ShellError::CommandNotFound("ls".to_string())
+            .to_string()
+            .contains("ls"));
+        assert!(ShellError::PathError("bad path".to_string())
+            .to_string()
+            .contains("bad path"));
     }
 }

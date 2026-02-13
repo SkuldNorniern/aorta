@@ -10,9 +10,7 @@ fn pattern_matches_impl(p: &[char], s: &[char]) -> bool {
     match (p.first(), s.first()) {
         (None, None) => true,
         (Some(&'*'), None) => pattern_matches_impl(&p[1..], s),
-        (Some(&'*'), _) => {
-            pattern_matches_impl(&p[1..], s) || pattern_matches_impl(p, &s[1..])
-        }
+        (Some(&'*'), _) => pattern_matches_impl(&p[1..], s) || pattern_matches_impl(p, &s[1..]),
         (Some(&'?'), Some(_)) => pattern_matches_impl(&p[1..], &s[1..]),
         (Some(&a), Some(&b)) if a == b => pattern_matches_impl(&p[1..], &s[1..]),
         _ => false,

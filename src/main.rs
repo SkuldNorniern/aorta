@@ -33,9 +33,8 @@ fn main() -> Result<(), aorta::error::ShellError> {
 }
 
 fn display_motd() -> io::Result<()> {
-    let home = path::home_dir().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::NotFound, "Home directory not found")
-    })?;
+    let home = path::home_dir()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Home directory not found"))?;
 
     let candidates = [
         std::path::PathBuf::from("/etc/aorta/motd"),

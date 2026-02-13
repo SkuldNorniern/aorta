@@ -25,8 +25,7 @@ where
             };
             (2 + consumed_len, val)
         } else {
-            let (var_name, consumed_len, default_val) =
-                parse_simple_var(&result[dollar_pos + 1..]);
+            let (var_name, consumed_len, default_val) = parse_simple_var(&result[dollar_pos + 1..]);
             let val = match (lookup(var_name), default_val) {
                 (Some(v), _) if !v.is_empty() => v,
                 (_, Some(d)) => d.to_string(),
@@ -66,9 +65,7 @@ fn run_command_substitution(cmd: &str) -> String {
     if cmd.is_empty() {
         return String::new();
     }
-    let output = std::process::Command::new("sh")
-        .args(["-c", cmd])
-        .output();
+    let output = std::process::Command::new("sh").args(["-c", cmd]).output();
     match output {
         Ok(out) => {
             let s = String::from_utf8_lossy(&out.stdout);
@@ -156,7 +153,11 @@ mod tests {
         );
         assert_eq!(
             expand_env_vars_with("${EMPTY:-fallback}", |s| {
-                if s == "EMPTY" { Some(String::new()) } else { None }
+                if s == "EMPTY" {
+                    Some(String::new())
+                } else {
+                    None
+                }
             }),
             "fallback"
         );
