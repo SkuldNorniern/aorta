@@ -17,7 +17,11 @@ where
                 break;
             }
         } else if next == b'{' {
-            let (var_name, consumed_len, default_val) = parse_braced_var(&result[dollar_pos + 2..]);
+            let Some((var_name, consumed_len, default_val)) =
+                parse_braced_var(&result[dollar_pos + 2..])
+            else {
+                break;
+            };
             let val = match (lookup(var_name), default_val) {
                 (Some(v), _) if !v.is_empty() => v,
                 (_, Some(d)) => d.to_string(),
@@ -83,19 +87,24 @@ fn parse_simple_var(rest: &str) -> (&str, usize, Option<&str>) {
     (var_name, var_end, None)
 }
 
-fn parse_braced_var(rest: &str) -> (&str, usize, Option<&str>) {
+fn parse_braced_var(rest: &str) -> Option<(&str, usize, Option<&str>)> {
     if let Some(close_brace) = rest.find('}') {
         let inner = &rest[..close_brace];
-        let consumed = 2 + close_brace;
+        let consumed = close_brace + 1;
         if let Some(colon_dash) = inner.find(":-") {
             let var_name = inner[..colon_dash].trim();
             let default_val = &inner[colon_dash + 2..];
-            return (var_name, consumed, Some(default_val));
+            return Some((var_name, consumed, Some(default_val)));
+        }
+        if let Some(dash) = inner.find('-') {
+            let var_name = inner[..dash].trim();
+            let default_val = &inner[dash + 1..];
+            return Some((var_name, consumed, Some(default_val)));
         }
         let var_name = inner.trim();
-        return (var_name, consumed, None);
+        return Some((var_name, consumed, None));
     }
-    ("", 0, None)
+    None
 }
 
 pub(crate) trait EnvironmentHandler {
@@ -132,7 +141,8 @@ mod tests {
     #[test]
     fn test_expand_env_vars_with_env() {
         std::env::set_var("AORTA_TEST_EXPAND", "expanded");
-        let result = expand_env_vars_with("test_$AORTA_TEST_EXPAND_end", |n| std::env::var(n).ok());
+        let result =
+            expand_env_vars_with("test_${AORTA_TEST_EXPAND}_end", |n| std::env::var(n).ok());
         std::env::remove_var("AORTA_TEST_EXPAND");
         assert_eq!(result, "test_expanded_end");
     }
@@ -161,6 +171,13 @@ mod tests {
             }),
             "fallback"
         );
+    }
+
+    #[test]
+    fn test_expand_braced_hyphen_syntax() {
+        let lookup = |s: &str| if s == "SET" { Some("x".into()) } else { None };
+        assert_eq!(expand_env_vars_with("${SET-foo}", lookup), "x");
+        assert_eq!(expand_env_vars_with("${UNSET-bar}", lookup), "bar");
     }
 
     #[test]

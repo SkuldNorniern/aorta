@@ -132,12 +132,52 @@ impl Shell {
         let host = env::var("HOSTNAME").unwrap_or_else(|_| "?".to_string());
 
         if let Ok(fmt) = env::var("AORTA_PROMPT") {
-            fmt.replace("%c", &self.current_dir)
-                .replace("%~", &cwd)
+            let user = Self::apply_color(&user, env::var("AORTA_STYLE_USER").ok().as_deref());
+            let host = Self::apply_color(&host, env::var("AORTA_STYLE_HOST").ok().as_deref());
+            let cwd_short = Self::apply_color(&cwd, env::var("AORTA_STYLE_PATH").ok().as_deref());
+            let cwd_full = Self::apply_color(
+                &self.current_dir,
+                env::var("AORTA_STYLE_PATH").ok().as_deref(),
+            );
+
+            fmt.replace("%c", &cwd_full)
+                .replace("%~", &cwd_short)
                 .replace("%u", &user)
                 .replace("%h", &host)
         } else {
             format!("{} > ", cwd)
+        }
+    }
+
+    fn apply_color(text: &str, style: Option<&str>) -> String {
+        let Some(style) = style else {
+            return text.to_string();
+        };
+
+        let code = match style.trim().to_ascii_lowercase().as_str() {
+            "black" => Some("30"),
+            "red" => Some("31"),
+            "green" => Some("32"),
+            "yellow" => Some("33"),
+            "blue" => Some("34"),
+            "magenta" => Some("35"),
+            "cyan" => Some("36"),
+            "white" => Some("37"),
+            "bright_black" | "gray" | "grey" => Some("90"),
+            "bright_red" => Some("91"),
+            "bright_green" => Some("92"),
+            "bright_yellow" => Some("93"),
+            "bright_blue" => Some("94"),
+            "bright_magenta" => Some("95"),
+            "bright_cyan" => Some("96"),
+            "bright_white" => Some("97"),
+            _ => None,
+        };
+
+        if let Some(code) = code {
+            format!("\x1b[{}m{}\x1b[0m", code, text)
+        } else {
+            text.to_string()
         }
     }
 

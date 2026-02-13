@@ -1,12 +1,8 @@
-use nix::sys::signal::{self, SigHandler, Signal};
-
 use crate::process::ProcessError;
 
 pub fn setup_signal_handlers() -> Result<(), ProcessError> {
-    unsafe {
-        signal::signal(Signal::SIGINT, SigHandler::SigIgn)
-            .map_err(|e| ProcessError::SignalError(e.to_string()))?;
-    }
+    // Keep parent shell signal behavior unchanged.
+    // External commands should inherit normal signal handling.
     Ok(())
 }
 

@@ -1,7 +1,6 @@
 use super::environment::EnvironmentHandler;
 use super::pipeline::Pipeline;
 use crate::error::ShellError;
-use std::collections::HashMap;
 
 pub(crate) trait CommandHandler {
     fn execute_command(&mut self, command: &str) -> Result<(), ShellError>;
@@ -23,14 +22,12 @@ impl CommandHandler for super::Shell {
         // Parse pipeline with the expanded command
         let pipeline = Pipeline::parse(&expanded_command).map_err(ShellError::PipelineError)?;
 
-        // Create environment variables HashMap with expanded values
-        let env_vars: HashMap<String, String> = std::env::vars()
-            .map(|(k, v)| (k, self.expand_env_vars(&v)))
-            .collect();
-
         // Execute pipeline with shell context
-        let result =
-            pipeline.execute_with_context(&env_vars, &self.config.get_aliases(), &self.executor);
+        let result = pipeline.execute_with_context(
+            &std::collections::HashMap::new(),
+            &self.config.get_aliases(),
+            &self.executor,
+        );
 
         // Calculate duration
         let duration = start_time.elapsed().as_millis() as u64;
