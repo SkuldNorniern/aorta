@@ -1,4 +1,4 @@
-use super::program::ProgramConfig;
+use super::program::{CompatMode, ProgramConfig};
 use super::ConfigError;
 use std::path::PathBuf;
 
@@ -12,12 +12,12 @@ pub struct ConfigPaths {
     pub aorta_home: PathBuf,
     pub system_profile: PathBuf,
     pub system_rc: PathBuf,
+    pub compat_mode: CompatMode,
 }
 
 impl ConfigPaths {
     pub fn new(custom_rc_path: Option<&str>) -> Result<Self, ConfigError> {
-        let home_path =
-            crate::path::home_dir().ok_or(ConfigError::HomeDirNotFound)?;
+        let home_path = crate::path::home_dir().ok_or(ConfigError::HomeDirNotFound)?;
 
         let prog = ProgramConfig::load(&home_path)?;
 
@@ -32,6 +32,7 @@ impl ConfigPaths {
             aorta_home: prog.aorta_home,
             system_profile: PathBuf::from(ETC_AORTA_PROFILE),
             system_rc: PathBuf::from(ETC_AORTA_RC),
+            compat_mode: prog.compat_mode,
         })
     }
 }
@@ -50,6 +51,7 @@ mod tests {
         assert_eq!(paths.profile_path, PathBuf::from("/home/testuser/.profile"));
         assert_eq!(paths.system_profile, PathBuf::from("/etc/aorta/profile"));
         assert_eq!(paths.system_rc, PathBuf::from("/etc/aorta/aortarc"));
+        assert_eq!(paths.compat_mode, CompatMode::Native);
     }
 
     #[test]

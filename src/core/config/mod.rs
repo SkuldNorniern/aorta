@@ -13,6 +13,7 @@ use aliases::AliasManager;
 use env_vars::EnvVarManager;
 use loader::ConfigLoader;
 use paths::ConfigPaths;
+use program::CompatMode;
 
 pub struct Config {
     paths: ConfigPaths,
@@ -73,7 +74,16 @@ impl Config {
 
     pub fn load_with_flags(&mut self, flags: &Flags) -> Result<(), ConfigError> {
         let paths = self.paths.clone();
-        let loader = ConfigLoader::new(&paths);
+        let compat_mode = if flags.is_set("compat") {
+            CompatMode::Compat
+        } else {
+            paths.compat_mode
+        };
+        let loader = if compat_mode == CompatMode::Native {
+            ConfigLoader::new(&paths)
+        } else {
+            ConfigLoader::new_with_mode(&paths, compat_mode)
+        };
         loader.load_configs(self, flags)?;
         Ok(())
     }
