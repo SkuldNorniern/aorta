@@ -4,6 +4,7 @@ mod aliases;
 mod bootstrap;
 mod env_vars;
 mod loader;
+mod migrator;
 mod paths;
 pub(super) mod program;
 
@@ -25,7 +26,8 @@ pub struct Config {
 pub fn ensure_default_config() -> Result<(), ConfigError> {
     let home = crate::path::home_dir().ok_or(ConfigError::HomeDirNotFound)?;
     program::ProgramConfig::write_default_config()?;
-    bootstrap::ensure_aortarc(&home)?;
+    let program_config = program::ProgramConfig::load(&home)?;
+    bootstrap::ensure_aortarc(&home, &program_config.bootstrap)?;
     bootstrap::ensure_aorta_home(&home)?;
     Ok(())
 }
