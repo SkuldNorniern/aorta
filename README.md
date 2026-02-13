@@ -38,19 +38,137 @@ cargo install aorta
 Create `~/.aortarc` to customize your shell:
 
 ```bash
-# Environment variables
-export PATH="$HOME/.local/bin:$PATH"
-export EDITOR="vim"
+# Theme: minimal, default, or custom
+theme minimal
 
-# Aliases
-alias ll='ls -la'
-alias gs='git status'
+# Plugins: load from ~/.aorta/plugins/<name>/<name>.aorta
+plugins git
 
-# Conditional configuration
-if [ -f "$HOME/.cargo/env" ]; then
-    source "$HOME/.cargo/env"
-fi
+# Customization
+alias ll=ls -la
+export EDITOR=vim
 ```
+
+Theme vs prompt (important):
+
+- `theme` controls visual styling (highlight colors for prompt parts).
+- `AORTA_PROMPT` / `prompt_preset` controls prompt structure/content (`%u`, `%h`, `%~`, etc.).
+- This separation avoids duplication: shape comes from prompt format, style comes from theme.
+
+Program-level settings live in `~/.config/aorta/config.toml`:
+
+```toml
+[paths]
+aorta_home = "~/.aorta"
+rc_path = "~/.aortarc"
+
+[loader]
+compat_mode = "native" # or "compat" for zsh/bash-like profile snippets
+
+[defaults]
+# Used when Aorta first generates ~/.aortarc
+# Theme choices: minimal, default, compact, classic, developer
+theme = "minimal"
+# Plugins load from ~/.aorta/plugins/<name>/<name>.aorta
+plugins = ["git"]
+editor = "vi"
+
+# Starship-inspired presets: minimal, compact, classic, developer
+prompt_preset = "minimal"
+
+# Optional explicit prompt format override
+# prompt_format = "%u@%h:%~$ "
+# prompt_format = "%~ $ "
+# prompt_format = "%u@%h %~ [dev]$ "
+
+# Legacy alias still accepted:
+# [bootstrap]
+```
+
+### Prompt Presets
+
+Use `prompt_preset` in `~/.config/aorta/config.toml` to choose a default style for generated `~/.aortarc`.
+
+- `minimal` -> `%~ > `
+- `compact` -> `%~ $ `
+- `classic` -> `%u@%h:%~$ `
+- `developer` -> `%u@%h %~ [dev]$ `
+
+If you want full control, set `prompt_format` instead of `prompt_preset`.
+
+```toml
+[defaults]
+prompt_format = "[%h] %~ -> "
+```
+
+Prompt tokens:
+
+- `%u` username
+- `%h` hostname
+- `%~` cwd (home shortened)
+- `%c` cwd (full path)
+
+### Theme Examples
+
+Themes are loaded from `~/.aorta/themes/<name>.aorta` and selected in `~/.aortarc`.
+
+Built-in bootstrap themes:
+
+- `minimal`
+- `default`
+- `compact`
+- `classic`
+- `developer`
+
+Theme highlight variables:
+
+- `AORTA_STYLE_USER`
+- `AORTA_STYLE_HOST`
+- `AORTA_STYLE_PATH`
+
+Supported color names include: `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`,
+`bright_red`, `bright_green`, `bright_yellow`, `bright_blue`, `bright_magenta`, `bright_cyan`,
+`bright_white`, `gray`.
+
+Example custom theme file:
+
+```bash
+# ~/.aorta/themes/work.aorta
+export AORTA_STYLE_USER="bright_cyan"
+export AORTA_STYLE_HOST="bright_blue"
+export AORTA_STYLE_PATH="cyan"
+```
+
+Then enable it:
+
+```bash
+theme work
+```
+
+### Plugin Examples
+
+Plugins are loaded by name from `~/.aorta/plugins/<name>/<name>.aorta`.
+
+Example:
+
+```bash
+# ~/.aorta/plugins/docker/docker.aorta
+alias dps='docker ps'
+alias dcu='docker compose up'
+alias dcd='docker compose down'
+```
+
+Enable it in `~/.aortarc`:
+
+```bash
+plugins git docker
+```
+
+Migration notes:
+
+- On first run, if `~/.aortarc` does not exist, Aorta scans common shell configs (`.zshrc`, `.bashrc`, `.bash_profile`, `.profile`, `~/.config/fish/config.fish`).
+- It imports compatible lines into the generated `~/.aortarc` (`alias`, `export`, `source`) and adds migration notes for unsupported patterns.
+- This keeps startup lightweight while helping you move from zsh/bash/fish incrementally.
 
 ## Development
 
