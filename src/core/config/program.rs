@@ -4,6 +4,9 @@ use super::ConfigError;
 
 const DEFAULT_AORTA_HOME: &str = "~/.aorta";
 const DEFAULT_RC_PATH: &str = "~/.aortarc";
+const DEFAULT_THEME: &str = "minimal";
+const DEFAULT_EDITOR: &str = "vi";
+const DEFAULT_PROMPT_PRESET: &str = "minimal";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompatMode {
@@ -32,6 +35,43 @@ pub struct ProgramConfig {
     pub aorta_home: PathBuf,
     pub rc_path: PathBuf,
     pub compat_mode: CompatMode,
+    pub bootstrap: BootstrapConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct BootstrapConfig {
+    pub theme: String,
+    pub plugins: Vec<String>,
+    pub editor: String,
+    pub prompt_preset: String,
+    pub prompt_format: Option<String>,
+}
+
+impl Default for BootstrapConfig {
+    fn default() -> Self {
+        Self {
+            theme: DEFAULT_THEME.to_string(),
+            plugins: vec!["git".to_string()],
+            editor: DEFAULT_EDITOR.to_string(),
+            prompt_preset: DEFAULT_PROMPT_PRESET.to_string(),
+            prompt_format: None,
+        }
+    }
+}
+
+impl BootstrapConfig {
+    pub fn resolved_prompt(&self) -> String {
+        if let Some(format) = &self.prompt_format {
+            return format.clone();
+        }
+
+        match self.prompt_preset.trim().to_ascii_lowercase().as_str() {
+            "compact" => "%~ $ ".to_string(),
+            "classic" => "%u@%h:%~$ ".to_string(),
+            "developer" => "%u@%h %~ [dev]$ ".to_string(),
+            _ => "%~ > ".to_string(),
+        }
+    }
 }
 
 impl ProgramConfig {
@@ -59,6 +99,7 @@ impl ProgramConfig {
         let mut aorta_home = home.join(".aorta");
         let mut rc_path = home.join(".aortarc");
         let mut compat_mode = CompatMode::Native;
+        let mut bootstrap = BootstrapConfig::default();
 
         if let Some(paths) = parsed.get("paths").and_then(|v| v.as_table()) {
             if let Some(v) = paths.get("aorta_home").and_then(|v| v.as_str()) {
@@ -75,6 +116,61 @@ impl ProgramConfig {
             }
         }
 
+        if let Some(config) = parsed.get("bootstrap").and_then(|v| v.as_table()) {
+            // Backward-compatible legacy section name.
+            if let Some(v) = config.get("theme").and_then(|v| v.as_str()) {
+                bootstrap.theme = v.trim().to_string();
+            }
+            if let Some(v) = config.get("editor").and_then(|v| v.as_str()) {
+                bootstrap.editor = v.trim().to_string();
+            }
+            if let Some(v) = config.get("prompt_preset").and_then(|v| v.as_str()) {
+                bootstrap.prompt_preset = v.trim().to_string();
+            }
+            if let Some(v) = config.get("prompt_format").and_then(|v| v.as_str()) {
+                bootstrap.prompt_format = Some(v.to_string());
+            }
+            if let Some(values) = config.get("plugins").and_then(|v| v.as_array()) {
+                let plugins: Vec<String> = values
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string)
+                    .collect();
+                if !plugins.is_empty() {
+                    bootstrap.plugins = plugins;
+                }
+            }
+        }
+
+        if let Some(config) = parsed.get("defaults").and_then(|v| v.as_table()) {
+            if let Some(v) = config.get("theme").and_then(|v| v.as_str()) {
+                bootstrap.theme = v.trim().to_string();
+            }
+            if let Some(v) = config.get("editor").and_then(|v| v.as_str()) {
+                bootstrap.editor = v.trim().to_string();
+            }
+            if let Some(v) = config.get("prompt_preset").and_then(|v| v.as_str()) {
+                bootstrap.prompt_preset = v.trim().to_string();
+            }
+            if let Some(v) = config.get("prompt_format").and_then(|v| v.as_str()) {
+                bootstrap.prompt_format = Some(v.to_string());
+            }
+            if let Some(values) = config.get("plugins").and_then(|v| v.as_array()) {
+                let plugins: Vec<String> = values
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string)
+                    .collect();
+                if !plugins.is_empty() {
+                    bootstrap.plugins = plugins;
+                }
+            }
+        }
+
         if std::env::var_os("AORTA_HOME").is_some() {
             aorta_home = std::env::var_os("AORTA_HOME")
                 .map(PathBuf::from)
@@ -85,6 +181,7 @@ impl ProgramConfig {
             aorta_home,
             rc_path,
             compat_mode,
+            bootstrap,
         })
     }
 
@@ -107,6 +204,7 @@ impl ProgramConfig {
             aorta_home,
             rc_path: home.join(".aortarc"),
             compat_mode: CompatMode::Native,
+            bootstrap: BootstrapConfig::default(),
         }
     }
 
@@ -138,10 +236,38 @@ rc_path = "{}"
 # native: Aorta syntax only (fast/default)
 # compat: extra parser compatibility for zsh/bash-style profile snippets
 compat_mode = "{}"
+
+[defaults]
+# Used when Aorta first generates ~/.aortarc.
+
+# Theme (ships with: minimal, default, compact, classic, developer)
+theme = "{}"
+
+# Plugins are loaded from ~/.aorta/plugins/<name>/<name>.aorta
+# Add more names in this list as you install/create plugins.
+plugins = ["git"]
+
+# Editor exported into ~/.aortarc
+editor = "{}"
+
+# Starship-inspired prompt presets: minimal, compact, classic, developer
+prompt_preset = "{}"
+
+# Optional: explicit prompt format (overrides prompt_preset)
+# Tokens: %u=user %h=host %~=cwd(short) %c=cwd(full)
+# prompt_format = "%u@%h:%~$ "
+# prompt_format = "%~ $ "
+# prompt_format = "%u@%h %~ [dev]$ "
+
+# Legacy alias still accepted for backward compatibility:
+# [bootstrap]
 "#,
             DEFAULT_AORTA_HOME,
             DEFAULT_RC_PATH,
             CompatMode::Native.as_str(),
+            DEFAULT_THEME,
+            DEFAULT_EDITOR,
+            DEFAULT_PROMPT_PRESET,
         );
         std::fs::write(&path, default)?;
         Ok(())
@@ -163,6 +289,10 @@ mod tests {
         assert_eq!(prog.rc_path, PathBuf::from("/home/user/.aortarc"));
         assert_eq!(prog.aorta_home, PathBuf::from("/home/user/.aorta"));
         assert_eq!(prog.compat_mode, CompatMode::Native);
+        assert_eq!(prog.bootstrap.theme, DEFAULT_THEME);
+        assert_eq!(prog.bootstrap.editor, DEFAULT_EDITOR);
+        assert_eq!(prog.bootstrap.plugins, vec!["git".to_string()]);
+        assert_eq!(prog.bootstrap.resolved_prompt(), "%~ > ");
     }
 
     #[test]
@@ -190,6 +320,12 @@ rc_path = "~/.aortarc"
 
 [loader]
 compat_mode = "compat"
+
+[defaults]
+theme = "default"
+plugins = ["git", "docker"]
+editor = "nvim"
+prompt_preset = "classic"
 "#,
         )
         .unwrap();
@@ -199,6 +335,10 @@ compat_mode = "compat"
 
         let prog = ProgramConfig::load(&PathBuf::from("/home/user")).unwrap();
         assert_eq!(prog.compat_mode, CompatMode::Compat);
+        assert_eq!(prog.bootstrap.theme, "default");
+        assert_eq!(prog.bootstrap.editor, "nvim");
+        assert_eq!(prog.bootstrap.plugins, vec!["git", "docker"]);
+        assert_eq!(prog.bootstrap.resolved_prompt(), "%u@%h:%~$ ");
 
         let _ = std::fs::remove_dir_all(base);
         env::remove_var("XDG_CONFIG_HOME");
