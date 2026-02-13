@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 mod alias;
 mod cd;
+mod eval;
 mod exit;
 mod export;
 mod history;
@@ -11,6 +12,7 @@ mod source;
 
 pub use alias::AliasCommand;
 pub use cd::CdCommand;
+pub use eval::EvalCommand;
 pub use exit::ExitCommand;
 pub use export::ExportCommand;
 pub use history::HistoryCommand;
@@ -65,6 +67,7 @@ enum CommandType {
     Cd(CdCommand),
     Source(SourceCommand),
     Exit(ExitCommand),
+    Eval(EvalCommand),
     Alias(AliasCommand),
     History(HistoryCommand),
     Export(ExportCommand),
@@ -76,6 +79,7 @@ impl Command for CommandType {
             CommandType::Cd(cmd) => cmd.execute(args),
             CommandType::Source(cmd) => cmd.execute(args),
             CommandType::Exit(cmd) => cmd.execute(args),
+            CommandType::Eval(cmd) => cmd.execute(args),
             CommandType::Alias(cmd) => cmd.execute(args),
             CommandType::History(cmd) => cmd.execute(args),
             CommandType::Export(cmd) => cmd.execute(args),
@@ -122,10 +126,6 @@ impl CommandExecutor {
         executor
             .commands
             .insert("cd".to_string(), CommandType::Cd(CdCommand::new()));
-        executor.commands.insert(
-            "source".to_string(),
-            CommandType::Source(SourceCommand::new(executor.clone())),
-        );
         executor
             .commands
             .insert("exit".to_string(), CommandType::Exit(ExitCommand::new()));
@@ -141,6 +141,14 @@ impl CommandExecutor {
             "export".to_string(),
             CommandType::Export(ExportCommand::new(executor.env_vars.clone())),
         );
+        executor.commands.insert(
+            "source".to_string(),
+            CommandType::Source(SourceCommand::new(executor.clone())),
+        );
+        executor.commands.insert(
+            "eval".to_string(),
+            CommandType::Eval(EvalCommand::new(executor.clone())),
+        );
 
         Ok(executor)
     }
@@ -149,7 +157,11 @@ impl CommandExecutor {
         self.execute_with_status(command, args).map(|_| ())
     }
 
-    pub fn execute_with_status(&self, command: &str, args: &[String]) -> Result<bool, CommandError> {
+    pub fn execute_with_status(
+        &self,
+        command: &str,
+        args: &[String],
+    ) -> Result<bool, CommandError> {
         if let Some(cmd) = self.commands.get(command) {
             cmd.execute(args).map(|_| true)
         } else {
@@ -280,6 +292,7 @@ mod tests {
         assert!(executor.is_builtin("cd"));
         assert!(executor.is_builtin("source"));
         assert!(executor.is_builtin("exit"));
+        assert!(executor.is_builtin("eval"));
         assert!(!executor.is_builtin("unknown"));
         assert!(!executor.is_builtin(""));
     }
@@ -296,7 +309,7 @@ mod tests {
         assert!(executor2.execute("cd", &[]).is_ok());
 
         // Verify both have the same commands registered
-        for cmd in ["cd", "source", "exit"].iter() {
+        for cmd in ["cd", "source", "exit", "eval"].iter() {
             assert_eq!(executor1.is_builtin(cmd), executor2.is_builtin(cmd));
         }
     }
